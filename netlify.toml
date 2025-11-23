@@ -1,0 +1,17 @@
+# Netlify configuration for a Vite + React app
+
+[build]
+  # Use the npm script that builds the Vite app
+  command = "npm run build"
+  # Vite outputs to `dist` by default
+  publish = "dist"
+
+# Useful for local Netlify Dev (optional)
+[dev]
+  command = "npm run dev"
+
+[[redirects]]
+  # Single Page App rewrite - serve index.html for all routes
+  from = "/*"
+  to = "/index.html"
+  status = 200
