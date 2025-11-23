@@ -226,6 +226,7 @@ export default function Calculator() {
   return (
     <div className="p-6 space-y-6 max-w-xl mx-auto">
       <h1 className="text-2xl font-bold">Calculator</h1>
+      <div className="text-sm text-gray-600">This tool is not official and does not include AA corrals.</div>
 
       <div className="space-y-2">
         <label className="font-medium">Race Distance</label>
