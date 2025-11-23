@@ -1,104 +1,51 @@
 import React, { useState } from "react";
 import csvRaw from '/NYRR Corral Placements - regular corrals_ miles.csv?raw';
 
-const CORRAL_TABLE = {
-  // 4M values are loaded from the CSV (A..K). We'll include K as the final bucket (Infinity)
-  // 4M will be filled at runtime from the CSV when possible; placeholder for now
-  "4M": [],
-
-  // Updated existing races: remove L and make K the final (Infinity)
-  "5K": [
-    { max: 1157, label: "A" },
-    { max: 1285, label: "B" },
-    { max: 1374, label: "C" },
-    { max: 1439, label: "D" },
-    { max: 1514, label: "E" },
-    { max: 1588, label: "F" },
-    { max: 1656, label: "G" },
-    { max: 1746, label: "H" },
-    { max: 1832, label: "I" },
-    { max: 1969, label: "J" },
-    { max: Infinity, label: "K" }
-  ],
-
-  "5M": [
-    { max: 1919, label: "A" },
-    { max: 2131, label: "B" },
-    { max: 2279, label: "C" },
-    { max: 2387, label: "D" },
-    { max: 2511, label: "E" },
-    { max: 2634, label: "F" },
-    { max: 2747, label: "G" },
-    { max: 2895, label: "H" },
-    { max: 3038, label: "I" },
-    { max: 3265, label: "J" },
-    { max: Infinity, label: "K" }
-  ],
-
-  "10K": [
-    { max: 2418, label: "A" },
-    { max: 2685, label: "B" },
-    { max: 2871, label: "C" },
-    { max: 3008, label: "D" },
-    { max: 3163, label: "E" },
-    { max: 3319, label: "F" },
-    { max: 3462, label: "G" },
-    { max: 3648, label: "H" },
-    { max: 3828, label: "I" },
-    { max: 4114, label: "J" },
-    { max: Infinity, label: "K" }
-  ],
-
-  "Half": [
-    { max: 5373, label: "A" },
-    { max: 5966, label: "B" },
-    { max: 6381, label: "C" },
-    { max: 6685, label: "D" },
-    { max: 8325, label: "E" },
-    { max: 8734, label: "F" },
-    { max: 9110, label: "G" },
-    { max: 9601, label: "H" },
-    { max: 10075, label: "I" },
-    { max: 10827, label: "J" },
-    { max: Infinity, label: "K" }
-  ],
-
-  "Full": [
-    { max: 10989, label: "A" },
-    { max: 12204, label: "B" },
-    { max: 13052, label: "C" },
-    { max: 13673, label: "D" },
-    { max: 14379, label: "E" },
-    { max: 15086, label: "F" },
-    { max: 15735, label: "G" },
-    { max: 16583, label: "H" },
-    { max: 17402, label: "I" },
-    { max: 18702, label: "J" },
-    { max: Infinity, label: "K" }
-  ]
-};
+// Corrals will be populated from the provided CSV at runtime. Keys are internal race keys
+// like "4M", "5K", "5M", "10K", "Half", "Full".
+const CORRAL_TABLE = {};
 
 // map of parsed A-row times (seconds) per race key (e.g., '10K', '4M')
 const A_TIME_BY_RACE = {};
 
-// Parse the provided CSV for desired columns (4 miles and 10K) and populate CORRAL_TABLE
+// Parse the provided CSV and populate CORRAL_TABLE for supported race columns.
 try {
   const lines = csvRaw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
-  // look for header row (first ~10 lines) and find column indices for target headers
-  const targets = [{ header: '4 miles', key: '4M' }, { header: '10K', key: '10K' }];
+
+  // find header row within the first ~10 lines (the CSV's first line contains race short names)
   const headerRowIndex = Math.min(lines.length, 10);
   let headerCols = null;
   for (let i = 0; i < headerRowIndex; i++) {
     const cols = lines[i].split(',').map(c => c.trim());
-    // check if this row contains any of the target headers (case-insensitive)
-    const found = targets.some(t => cols.findIndex(c => c.toLowerCase() === t.header.toLowerCase()) !== -1);
-    if (found) { headerCols = cols; break; }
+    // pick the row that contains at least one of the known race names (like '5K' or '10K')
+    if (cols.some(c => /5k|10k|4 miles|half marathon|marathon|5 miles/i.test(c))) {
+      headerCols = cols;
+      break;
+    }
   }
 
   if (headerCols) {
-    for (const t of targets) {
-  const colIndex = headerCols.findIndex(c => c.toLowerCase() === t.header.toLowerCase());
-      if (colIndex === -1) continue;
+    // mapping from CSV header -> internal key used in the app
+    const CSV_TO_KEY = {
+      '5k': '5K',
+      '4 miles': '4M',
+      '5 miles': '5M',
+      '10k': '10K',
+      'half marathon': 'Half',
+      'marathon': 'Full'
+    };
+
+    // helper to normalize header text
+    const norm = (s) => (s || '').toString().toLowerCase().trim();
+
+    // find the row index for the 'A' row to capture A-time more reliably
+    const aLine = lines.find(l => l.split(',')[0]?.trim() === 'A');
+    const aCols = aLine ? aLine.split(',') : null;
+
+    // iterate all header columns and parse supported races
+    headerCols.forEach((h, colIndex) => {
+      const key = CSV_TO_KEY[norm(h)];
+      if (!key) return; // unsupported/unused column
 
       const table = [];
       for (const line of lines) {
@@ -107,7 +54,6 @@ try {
         if (!name) continue;
         if (/^[A-K]$/.test(name)) {
           const cell = (cols[colIndex] || '').trim();
-          // extract time like H:MM:SS or M:SS or 0:25:11 or plain ---
           const m = cell.match(/(\d+:)?\d{1,2}:\d{2}/);
           if (m) {
             const timeStr = m[0];
@@ -123,37 +69,39 @@ try {
         }
       }
 
+      // stop at first missing (null) value to get contiguous rows from A..?
       const cleaned = [];
       for (const row of table) {
-        if (row.max == null) break; // stop at first missing value
+        if (row.max == null) break;
         cleaned.push(row);
       }
-      if (cleaned.length > 0) {
-        cleaned[cleaned.length-1].max = Infinity;
-        CORRAL_TABLE[t.key] = cleaned;
-        console.debug(`Parsed corrals for ${t.key}:`, cleaned.map(r => ({label: r.label, max: r.max})));
-      } else {
-        console.debug(`No cleaned corrals parsed for ${t.key}`);
-      }
 
-      // also capture the 'A' row exact time for this column to use as slider minimum
-      const aLine = lines.find(l => l.split(',')[0]?.trim() === 'A');
-      if (aLine) {
-        const aCols = aLine.split(',');
-        const aCell = (aCols[colIndex] || '').trim();
-        const m2 = aCell.match(/(\d+:)?\d{1,2}:\d{2}/);
-        if (m2) {
-          const timeStr = m2[0];
-          const parts = timeStr.split(':').map(Number);
-          let seconds = 0;
-          if (parts.length === 3) seconds = parts[0]*3600 + parts[1]*60 + parts[2];
-          else if (parts.length === 2) seconds = parts[0]*60 + parts[1];
-          else seconds = Number(timeStr);
-          A_TIME_BY_RACE[t.key] = seconds;
-          console.debug(`Parsed A time for ${t.key}:`, seconds);
+      if (cleaned.length > 0) {
+        // If CSV included a K row, keep its value. If not, make final bucket open-ended.
+        const lastRow = cleaned[cleaned.length - 1];
+        if (lastRow.label !== 'K') lastRow.max = Infinity;
+        CORRAL_TABLE[key] = cleaned;
+        console.debug(`Parsed corrals for ${key}:`, cleaned.map(r => ({label: r.label, max: r.max})));
+
+        // capture A time for slider minimum if available
+        if (aCols && aCols[colIndex]) {
+          const aCell = (aCols[colIndex] || '').trim();
+          const m2 = aCell.match(/(\d+:)?\d{1,2}:\d{2}/);
+          if (m2) {
+            const timeStr = m2[0];
+            const parts = timeStr.split(':').map(Number);
+            let seconds = 0;
+            if (parts.length === 3) seconds = parts[0]*3600 + parts[1]*60 + parts[2];
+            else if (parts.length === 2) seconds = parts[0]*60 + parts[1];
+            else seconds = Number(timeStr);
+            A_TIME_BY_RACE[key] = seconds;
+            console.debug(`Parsed A time for ${key}:`, seconds);
+          }
         }
+      } else {
+        console.debug(`No cleaned corrals parsed for column ${h} (key ${key})`);
       }
-    }
+    });
   }
 } catch (e) {
   console.warn('Failed to parse CSV for corrals', e);
@@ -204,10 +152,29 @@ export default function Calculator() {
     setSeconds(paceToTime(p));
   };
 
-  const corrals = CORRAL_TABLE[race];
-  const corral = corrals.find(c => seconds <= c.max);
-  const idx = corrals.indexOf(corral);
-  const prevMax = idx === 0 ? 0 : corrals[idx-1].max;
+  const corrals = CORRAL_TABLE[race] || [];
+  // use the current input value (time seconds) when finding the matching corral
+  const valForFind = mode === 'time' ? seconds : paceToTime(pace);
+  let corral = corrals.find(c => valForFind <= c.max);
+  let idx;
+  let prevMax;
+  if (!corral) {
+    // no matching corral found (e.g., input > last corral max).
+    if (corrals.length > 0) {
+      // fallback to the last corral in the table
+      idx = corrals.length - 1;
+      corral = corrals[idx];
+      prevMax = idx === 0 ? 0 : (corrals[idx - 1]?.max ?? 0);
+    } else {
+      // no corrals available for this race (shouldn't normally happen) -> use safe defaults
+      corral = { max: Infinity, label: '?' };
+      idx = 0;
+      prevMax = 0;
+    }
+  } else {
+    idx = corrals.indexOf(corral);
+    prevMax = idx === 0 ? 0 : (corrals[idx - 1]?.max ?? 0);
+  }
 
   const corralRange = (() => {
     const min = prevMax;
@@ -224,15 +191,22 @@ export default function Calculator() {
   })();
 
   const sliderValue = mode === 'time' ? seconds : pace;
-  const sliderMin = SLIDER_RANGES[race][mode][0];
-  // Make slider max equal to the K corral slowest time for this race when possible.
+  // Compute slider min/max dynamically from CSV data (A time and last corral) with fallbacks
+  const defaultSliderMin = SLIDER_RANGES[race][mode][0];
   const defaultSliderMax = SLIDER_RANGES[race][mode][1];
+  // Prefer the parsed A-time as a realistic lower bound
+  let sliderMin = defaultSliderMin;
+  const aTime = A_TIME_BY_RACE[race];
+  if (aTime && Number.isFinite(aTime)) {
+    if (mode === 'time') sliderMin = Math.max(defaultSliderMin, Math.floor(aTime * 0.7));
+    else sliderMin = Math.max(defaultSliderMin, Math.floor((aTime / raceMiles) * 0.7));
+  }
   let sliderMax = defaultSliderMax;
   const raceTable = CORRAL_TABLE[race];
   if (raceTable && raceTable.length > 0) {
     const last = raceTable[raceTable.length - 1];
     if (Number.isFinite(last.max)) {
-      sliderMax = last.max;
+      sliderMax = (mode === 'time') ? last.max : Math.round(last.max / raceMiles);
     } else {
       // last.max is Infinity (K is open-ended). Use the previous corral's max as the cap (no +10min).
       const prev = raceTable.length >= 2 ? raceTable[raceTable.length - 2].max : defaultSliderMax;
@@ -242,6 +216,10 @@ export default function Calculator() {
         sliderMax = defaultSliderMax;
       }
     }
+  }
+  // ensure sliderMin is strictly less than sliderMax; if not, relax sliderMin
+  if (sliderMin >= sliderMax) {
+    sliderMin = Math.max(defaultSliderMin, Math.floor(sliderMax * 0.5));
   }
   const sliderOnChange = (e) => mode === 'time' ? updateTime(Number(e.target.value)) : updatePace(Number(e.target.value));
 
