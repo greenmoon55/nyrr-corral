@@ -1,146 +1,92 @@
 import React, { useState } from "react";
-import csvRaw from '/NYRR Corral Placements - regular corrals_ miles.csv?raw';
 
-// Corrals will be populated from the provided CSV at runtime. Keys are internal race keys
-// like "4M", "5K", "5M", "10K", "Half", "Full".
-const CORRAL_TABLE = {};
+const RACES = {
+  "5K": { miles: 3.107520199, factor: 2.09 },
+  "4M": { miles: 4, factor: 1.6 },
+  "5M": { miles: 5, factor: 1.26 },
+  "10K": { miles: 6.215040398, factor: 1 },
+  Half: { miles: 13.11218148, factor: 0.45 },
+  Full: { miles: 26.22436296, factor: 0.22 },
+};
 
-// map of parsed A-row times (seconds) per race key (e.g., '10K', '4M')
-const A_TIME_BY_RACE = {};
+const CATEGORIES = {
+  men: { label: "Men", aaLabel: "AA-m" },
+  women: { label: "Women", aaLabel: "AA-w" },
+  nonbinary: { label: "Non-binary", aaLabel: "AA-x" },
+};
 
-// Parse the provided CSV and populate CORRAL_TABLE for supported race columns.
-try {
-  const lines = csvRaw.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
+const paceSeconds = (pace) => {
+  const [minutes, seconds] = pace.split(":").map(Number);
+  return minutes * 60 + seconds;
+};
 
-  // find header row within the first ~10 lines (the CSV's first line contains race short names)
-  const headerRowIndex = Math.min(lines.length, 10);
-  let headerCols = null;
-  for (let i = 0; i < headerRowIndex; i++) {
-    const cols = lines[i].split(',').map(c => c.trim());
-    // pick the row that contains at least one of the known race names (like '5K' or '10K')
-    if (cols.some(c => /5k|10k|4 miles|half marathon|marathon|5 miles/i.test(c))) {
-      headerCols = cols;
-      break;
+const CORRAL_RANGES = [
+  { label: "A", min: paceSeconds("6:20"), max: paceSeconds("6:29") },
+  { label: "B", min: paceSeconds("6:30"), max: paceSeconds("7:03") },
+  { label: "C", min: paceSeconds("7:04"), max: paceSeconds("7:28") },
+  { label: "D", min: paceSeconds("7:29"), max: paceSeconds("7:52") },
+  { label: "E", min: paceSeconds("7:53"), max: paceSeconds("8:12") },
+  { label: "F", min: paceSeconds("8:13"), max: paceSeconds("8:33") },
+  { label: "G", min: paceSeconds("8:34"), max: paceSeconds("8:56") },
+  { label: "H", min: paceSeconds("8:57"), max: paceSeconds("9:20") },
+  { label: "I", min: paceSeconds("9:21"), max: paceSeconds("9:51") },
+  { label: "J", min: paceSeconds("9:52"), max: paceSeconds("10:30") },
+  { label: "K", min: paceSeconds("10:31"), max: paceSeconds("11:36") },
+];
+
+const SLIDER_RANGES = {
+  "5K": { timeMax: 2177, paceMax: paceSeconds("11:36") },
+  "4M": { timeMax: 2849, paceMax: paceSeconds("11:36") },
+  "5M": { timeMax: 3611, paceMax: paceSeconds("11:36") },
+  "10K": { timeMax: 4326, paceMax: paceSeconds("11:36") },
+  Half: { timeMax: 9612, paceMax: paceSeconds("11:36") },
+  Full: { timeMax: 19661, paceMax: paceSeconds("11:36") },
+};
+
+const formatTime = (time) => {
+  const rounded = Math.round(time);
+  const h = Math.floor(rounded / 3600);
+  const m = Math.floor((rounded % 3600) / 60);
+  const s = String(rounded % 60).padStart(2, "0");
+  return h > 0 ? `${h}:${String(m).padStart(2, "0")}:${s}` : `${m}:${s}`;
+};
+
+const formatPace = (pace) => {
+  const rounded = Math.round(pace);
+  const min = Math.floor(rounded / 60);
+  const sec = String(rounded % 60).padStart(2, "0");
+  return `${min}:${sec}/mi`;
+};
+
+const getCorral = (bestPace, category) => {
+  if (category === "men") {
+    if (bestPace <= paceSeconds("5:04")) {
+      return { label: "AA-m", min: paceSeconds("4:00"), max: paceSeconds("5:04") };
+    }
+    if (bestPace <= paceSeconds("6:19")) {
+      return { label: "A-m", min: paceSeconds("5:05"), max: paceSeconds("6:19") };
     }
   }
 
-  if (headerCols) {
-    // mapping from CSV header -> internal key used in the app
-    const CSV_TO_KEY = {
-      '5k': '5K',
-      '4 miles': '4M',
-      '5 miles': '5M',
-      '10k': '10K',
-      'half marathon': 'Half',
-      'marathon': 'Full'
-    };
-
-    // helper to normalize header text
-    const norm = (s) => (s || '').toString().toLowerCase().trim();
-
-    // find the row index for the 'A' row to capture A-time more reliably
-    const aLine = lines.find(l => l.split(',')[0]?.trim() === 'A');
-    const aCols = aLine ? aLine.split(',') : null;
-
-    // iterate all header columns and parse supported races
-    headerCols.forEach((h, colIndex) => {
-      const key = CSV_TO_KEY[norm(h)];
-      if (!key) return; // unsupported/unused column
-
-      const table = [];
-      for (const line of lines) {
-        const cols = line.split(',');
-        const name = cols[0]?.trim();
-        if (!name) continue;
-        if (/^[A-K]$/.test(name)) {
-          const cell = (cols[colIndex] || '').trim();
-          const m = cell.match(/(\d+:)?\d{1,2}:\d{2}/);
-          if (m) {
-            const timeStr = m[0];
-            const parts = timeStr.split(':').map(Number);
-            let seconds = 0;
-            if (parts.length === 3) seconds = parts[0]*3600 + parts[1]*60 + parts[2];
-            else if (parts.length === 2) seconds = parts[0]*60 + parts[1];
-            else seconds = Number(timeStr);
-            table.push({ max: seconds, label: name });
-          } else {
-            table.push({ max: null, label: name });
-          }
-        }
-      }
-
-      // stop at first missing (null) value to get contiguous rows from A..?
-      const cleaned = [];
-      for (const row of table) {
-        if (row.max == null) break;
-        cleaned.push(row);
-      }
-
-      if (cleaned.length > 0) {
-        // If CSV included a K row, keep its value. If not, make final bucket open-ended.
-        const lastRow = cleaned[cleaned.length - 1];
-        if (lastRow.label !== 'K') lastRow.max = Infinity;
-        CORRAL_TABLE[key] = cleaned;
-        console.debug(`Parsed corrals for ${key}:`, cleaned.map(r => ({label: r.label, max: r.max})));
-
-        // capture A time for slider minimum if available
-        if (aCols && aCols[colIndex]) {
-          const aCell = (aCols[colIndex] || '').trim();
-          const m2 = aCell.match(/(\d+:)?\d{1,2}:\d{2}/);
-          if (m2) {
-            const timeStr = m2[0];
-            const parts = timeStr.split(':').map(Number);
-            let seconds = 0;
-            if (parts.length === 3) seconds = parts[0]*3600 + parts[1]*60 + parts[2];
-            else if (parts.length === 2) seconds = parts[0]*60 + parts[1];
-            else seconds = Number(timeStr);
-            A_TIME_BY_RACE[key] = seconds;
-            console.debug(`Parsed A time for ${key}:`, seconds);
-          }
-        }
-      } else {
-        console.debug(`No cleaned corrals parsed for column ${h} (key ${key})`);
-      }
-    });
+  if (bestPace <= paceSeconds("6:19")) {
+    return { label: CATEGORIES[category].aaLabel, min: paceSeconds("4:00"), max: paceSeconds("6:19") };
   }
-} catch (e) {
-  console.warn('Failed to parse CSV for corrals', e);
-}
 
-// (A_TIME_BY_RACE populated above)
-
-const SLIDER_RANGES = {
-  "4M": { time: [600, 4000], pace: [300, 1200] },
-  "5K": { time: [300, 2000], pace: [300, 1200] },
-  "5M": { time: [600, 4000], pace: [300, 1200] },
-  "10K": { time: [600, 6000], pace: [300, 1200] },
-  "Half": { time: [1800, 9000], pace: [360, 1200] },
-  "Full": { time: [3600, 20000], pace: [420, 1500] }
+  return CORRAL_RANGES.find((range) => bestPace >= range.min && bestPace <= range.max) || CORRAL_RANGES[CORRAL_RANGES.length - 1];
 };
 
 export default function Calculator() {
   const [race, setRace] = useState("10K");
+  const [category, setCategory] = useState("men");
   const [mode, setMode] = useState("time");
   const [seconds, setSeconds] = useState(3000);
   const [pace, setPace] = useState(480);
 
-  const raceMiles = { "4M": 4, "5K": 3.107520199, "5M": 5, "10K": 6.215040398, Half: 13.11218148, Full: 26.22436296 }[race];
-
-  const formatTime = (t) => {
-    const h = Math.floor(t / 3600);
-    const m = Math.floor((t % 3600) / 60);
-    const s = String(t % 60).padStart(2, "0");
-    return h > 0 ? `${h}:${String(m).padStart(2,"0")}:${s}` : `${m}:${s}`;
-  };
+  const raceInfo = RACES[race];
+  const raceMiles = raceInfo.miles;
 
   const paceToTime = (p) => Math.round(p * raceMiles);
   const timeToPace = (t) => t / raceMiles;
-
-  const formatPace = (p) => {
-    const min = Math.floor(p / 60);
-    const sec = String(Math.round(p % 60)).padStart(2, '0');
-    return `${min}:${sec}/mi`;
-  };
 
   const updateTime = (t) => {
     setSeconds(t);
@@ -152,87 +98,49 @@ export default function Calculator() {
     setSeconds(paceToTime(p));
   };
 
-  const corrals = CORRAL_TABLE[race] || [];
-  // use the current input value (time seconds) when finding the matching corral
-  const valForFind = mode === 'time' ? seconds : paceToTime(pace);
-  let corral = corrals.find(c => valForFind <= c.max);
-  let idx;
-  let prevMax;
-  if (!corral) {
-    // no matching corral found (e.g., input > last corral max).
-    if (corrals.length > 0) {
-      // fallback to the last corral in the table
-      idx = corrals.length - 1;
-      corral = corrals[idx];
-      prevMax = idx === 0 ? 0 : (corrals[idx - 1]?.max ?? 0);
-    } else {
-      // no corrals available for this race (shouldn't normally happen) -> use safe defaults
-      corral = { max: Infinity, label: '?' };
-      idx = 0;
-      prevMax = 0;
-    }
-  } else {
-    idx = corrals.indexOf(corral);
-    prevMax = idx === 0 ? 0 : (corrals[idx - 1]?.max ?? 0);
-  }
+  const enteredTime = mode === "time" ? seconds : paceToTime(pace);
+  const best10KTime = enteredTime * raceInfo.factor;
+  const bestPace = best10KTime / RACES["10K"].miles;
+  const corral = getCorral(bestPace, category);
+  const sliderValue = mode === "time" ? seconds : pace;
+  const sliderOnChange = (e) => mode === "time" ? updateTime(Number(e.target.value)) : updatePace(Number(e.target.value));
+  const bestPaceToRaceTime = (p) => (p * RACES["10K"].miles) / raceInfo.factor;
+  const fastestPace = paceSeconds("4:00");
+  const sliderMin = mode === "time" ? Math.floor(bestPaceToRaceTime(fastestPace)) : fastestPace;
+  const sliderMax = mode === "time" ? SLIDER_RANGES[race].timeMax : SLIDER_RANGES[race].paceMax;
+  const corralRange = Number.isFinite(corral.max)
+    ? mode === "time"
+      ? `${formatTime(bestPaceToRaceTime(corral.min))} - ${formatTime(bestPaceToRaceTime(corral.max))}`
+      : `${formatPace(corral.min)} - ${formatPace(corral.max)}`
+    : mode === "time"
+      ? `${formatTime(bestPaceToRaceTime(corral.min))}+`
+      : `${formatPace(corral.min)}+`;
 
-  const corralRange = (() => {
-    const min = prevMax;
-    const max = corral.max;
-    if(mode === 'time') return `${formatTime(min)} - ${formatTime(max)}`;
-    const minPace = formatPace(min / raceMiles);
-    const maxPace = formatPace(max / raceMiles);
-    return `${minPace} - ${maxPace}`;
-  })();
-
-  const progressPercent = (() => {
-    let val = mode === 'time' ? seconds : paceToTime(pace);
-    return ((val - prevMax) / (corral.max - prevMax)) * 100;
-  })();
-
-  const sliderValue = mode === 'time' ? seconds : pace;
-  // Compute slider min/max dynamically from CSV data (A time and last corral) with fallbacks
-  const defaultSliderMin = SLIDER_RANGES[race][mode][0];
-  const defaultSliderMax = SLIDER_RANGES[race][mode][1];
-  // Prefer the parsed A-time as a realistic lower bound
-  let sliderMin = defaultSliderMin;
-  const aTime = A_TIME_BY_RACE[race];
-  if (aTime && Number.isFinite(aTime)) {
-    if (mode === 'time') sliderMin = Math.max(defaultSliderMin, Math.floor(aTime * 0.7));
-    else sliderMin = Math.max(defaultSliderMin, Math.floor((aTime / raceMiles) * 0.7));
-  }
-  let sliderMax = defaultSliderMax;
-  const raceTable = CORRAL_TABLE[race];
-  if (raceTable && raceTable.length > 0) {
-    const last = raceTable[raceTable.length - 1];
-    if (Number.isFinite(last.max)) {
-      sliderMax = (mode === 'time') ? last.max : Math.round(last.max / raceMiles);
-    } else {
-      // last.max is Infinity (K is open-ended). Use the previous corral's max as the cap (no +10min).
-      const prev = raceTable.length >= 2 ? raceTable[raceTable.length - 2].max : defaultSliderMax;
-      if (prev && Number.isFinite(prev)) {
-        sliderMax = (mode === 'time') ? prev : Math.round(prev / raceMiles);
-      } else {
-        sliderMax = defaultSliderMax;
-      }
-    }
-  }
-  // ensure sliderMin is strictly less than sliderMax; if not, relax sliderMin
-  if (sliderMin >= sliderMax) {
-    sliderMin = Math.max(defaultSliderMin, Math.floor(sliderMax * 0.5));
-  }
-  const sliderOnChange = (e) => mode === 'time' ? updateTime(Number(e.target.value)) : updatePace(Number(e.target.value));
+  const progressPercent = Number.isFinite(corral.max)
+    ? ((bestPace - corral.min) / (corral.max - corral.min)) * 100
+    : 100;
 
   return (
     <div className="p-6 space-y-6 max-w-xl mx-auto">
       <h1 className="text-2xl font-bold">Calculator</h1>
-      <div className="text-sm text-gray-600">This tool is not official and does not include AA corrals.</div>
+      <div className="text-sm text-gray-600">Unofficial calculator using NYRR's published best-pace corral cuts.</div>
+      <div className="text-sm text-gray-600">Pace cuts effective beginning with the NYRR Fred Lebow Half Marathon on January 25, 2026.</div>
+      <div className="text-sm text-gray-600">L corral is omitted.</div>
+
+      <div className="space-y-2">
+        <label className="font-medium">Category</label>
+        <select className="p-2 rounded border" value={category} onChange={(e) => setCategory(e.target.value)}>
+          {Object.entries(CATEGORIES).map(([value, item]) => (
+            <option key={value} value={value}>{item.label}</option>
+          ))}
+        </select>
+      </div>
 
       <div className="space-y-2">
         <label className="font-medium">Race Distance</label>
-        <select className="p-2 rounded border" value={race} onChange={(e)=>setRace(e.target.value)}>
-          <option>4M</option>
+        <select className="p-2 rounded border" value={race} onChange={(e) => setRace(e.target.value)}>
           <option>5K</option>
+          <option>4M</option>
           <option>5M</option>
           <option>10K</option>
           <option>Half</option>
@@ -243,15 +151,15 @@ export default function Calculator() {
       <div className="space-y-2">
         <label className="font-medium">Input Mode</label>
         <div className="flex gap-4">
-          <button className={`px-3 py-1 rounded ${mode==='time'?'bg-black text-white':'bg-gray-200'}`} onClick={()=>setMode('time')}>Time</button>
-          <button className={`px-3 py-1 rounded ${mode==='pace'?'bg-black text-white':'bg-gray-200'}`} onClick={()=>setMode('pace')}>Pace</button>
+          <button className={`px-3 py-1 rounded ${mode === "time" ? "bg-black text-white" : "bg-gray-200"}`} onClick={() => setMode("time")}>Time</button>
+          <button className={`px-3 py-1 rounded ${mode === "pace" ? "bg-black text-white" : "bg-gray-200"}`} onClick={() => setMode("pace")}>Pace</button>
         </div>
       </div>
 
       <div className="space-y-2">
-        <label className="font-medium">{mode==='time'?'Race Time':'Pace (min/mile)'}</label>
+        <label className="font-medium">{mode === "time" ? "Race Time" : "Pace (min/mile)"}</label>
         <input type="range" min={sliderMin} max={sliderMax} value={sliderValue} onChange={sliderOnChange} className="w-full" />
-        <div className="text-xl font-semibold">{mode==='time'?formatTime(seconds):formatPace(pace)}</div>
+        <div className="text-xl font-semibold">{mode === "time" ? formatTime(seconds) : formatPace(pace)}</div>
       </div>
 
       <div className="p-4 rounded-xl bg-gray-100 space-y-4">
@@ -259,7 +167,7 @@ export default function Calculator() {
         <div className="space-y-2">
           <div className="text-sm text-gray-600">Corral Range</div>
           <div className="w-full h-3 bg-gray-300 rounded-full relative">
-            <div className="h-3 bg-black rounded-full" style={{width:`${Math.max(0, Math.min(100, progressPercent))}%`}} />
+            <div className="h-3 bg-black rounded-full" style={{ width: `${Math.max(0, Math.min(100, progressPercent))}%` }} />
           </div>
           <div className="text-sm text-gray-600">{corralRange}</div>
         </div>
