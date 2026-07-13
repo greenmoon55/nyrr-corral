@@ -154,7 +154,7 @@ const extractRunnerId = (value) => {
 
 const getCorral = (bestPace, category) => {
   if (bestPace > paceSeconds("11:36")) {
-    return { label: "L omitted", min: paceSeconds("11:37"), max: Infinity, omittedL: true };
+    return { label: "L", min: paceSeconds("11:37"), max: paceSeconds("25:00") };
   }
 
   if (category === "men") {
@@ -180,8 +180,8 @@ const getResultCorral = ({ time, raceInfo, category }) => {
 };
 
 const getCorralPercent = (bestPace, corral) => {
-  if (!corral || corral.omittedL || !Number.isFinite(corral.max) || corral.max === corral.min) return null;
-  const percent = ((bestPace - corral.min) / (corral.max - corral.min)) * 100;
+  if (!corral || !Number.isFinite(corral.max) || corral.max === corral.min) return null;
+  const percent = ((corral.max - bestPace) / (corral.max - corral.min)) * 100;
   return Math.round(Math.max(0, Math.min(100, percent)));
 };
 
@@ -289,7 +289,6 @@ function RunnerLookup() {
       <div className="space-y-2">
         <h2 className="text-xl font-bold">NYRR Result Import</h2>
         <div className="text-sm text-gray-600">Search by runner name, NYRR runner ID, or runner results URL.</div>
-        <div className="text-sm text-gray-600">Imported results are mapped using the current corral cuts, not the corral rules from the race date.</div>
       </div>
 
       <form className="lookup-form" onSubmit={searchRunner}>
@@ -358,8 +357,13 @@ function RaceResults({ races, category }) {
   }
 
   return (
-    <div className="results-wrap">
-      <table className="results-table">
+    <div className="results-block">
+      <div className="results-legend">
+        <span className="font-semibold">Corral progress</span>
+        <span>Higher means closer to the faster edge of the corral range.</span>
+      </div>
+      <div className="results-wrap">
+        <table className="results-table">
         <thead>
           <tr>
             <th className="corral-column">Corral</th>
@@ -381,6 +385,7 @@ function RaceResults({ races, category }) {
             else if (!time) status = "Missing official time";
             else calculated = getResultCorral({ time, raceInfo, category });
             const resultUrl = getRaceResultUrl(race);
+            const corralPercent = calculated ? getCorralPercent(calculated.bestPace, calculated.corral) : null;
 
             return (
               <tr key={`${race.eventCode}-${race.bib}-${race.startDateTime}`}>
@@ -388,12 +393,25 @@ function RaceResults({ races, category }) {
                   {status ? (
                     <span className="muted-label">{status}</span>
                   ) : (
-                    <>
-                      <span className={calculated.corral.omittedL ? "omitted-label" : "corral-label"}>{calculated.corral.label}</span>
-                      {getCorralPercent(calculated.bestPace, calculated.corral) !== null && (
-                        <div className="text-sm text-gray-600">Top {getCorralPercent(calculated.bestPace, calculated.corral)}% of {calculated.corral.label}</div>
+                    <div className="corral-cell-content">
+                      <span className="corral-label">{calculated.corral.label}</span>
+                      {corralPercent !== null && (
+                        <div className="corral-progress-row">
+                          <div
+                            aria-label={`${corralPercent}% toward the faster edge of ${calculated.corral.label} corral`}
+                            aria-valuemax="100"
+                            aria-valuemin="0"
+                            aria-valuenow={corralPercent}
+                            className="corral-progress"
+                            role="progressbar"
+                            title={`${corralPercent}% toward the faster edge of ${calculated.corral.label} corral`}
+                          >
+                            <span style={{ width: `${corralPercent}%` }} />
+                          </div>
+                          <span className="corral-progress-value">{corralPercent}%</span>
+                        </div>
                       )}
-                    </>
+                    </div>
                   )}
                 </td>
                 <td data-label="Race">
@@ -413,7 +431,8 @@ function RaceResults({ races, category }) {
             );
           })}
         </tbody>
-      </table>
+        </table>
+      </div>
     </div>
   );
 }
@@ -464,7 +483,7 @@ function ManualCalculator() {
   return (
     <section className="panel space-y-6">
       <div className="space-y-2">
-        <h2 className="text-xl font-bold">Manual Calculator</h2>
+        <h2 className="text-xl font-bold">Manual Result Check</h2>
       </div>
 
       <div className="space-y-2">
@@ -500,7 +519,7 @@ function ManualCalculator() {
       </div>
 
       <div className="p-4 rounded-xl bg-gray-100 space-y-4">
-        <div className="text-lg">Corral: <span className="font-bold text-xl">{corral.label}</span></div>
+        <div className="text-lg">Corral: <span className="font-bold text-xl manual-corral-value">{corral.label}</span></div>
         <div className="space-y-2">
           <div className="text-sm text-gray-600">Corral Range</div>
           <div className="w-full h-3 bg-gray-300 rounded-full relative">
@@ -514,17 +533,45 @@ function ManualCalculator() {
 }
 
 export default function Calculator() {
+  const [activeView, setActiveView] = useState("results");
+
   return (
     <div className="p-6 space-y-6 max-w-4xl mx-auto">
       <div className="space-y-2">
-        <h1 className="text-2xl font-bold">Calculator</h1>
-        <div className="text-sm text-gray-600">Unofficial calculator using NYRR's published best-pace corral cuts.</div>
-        <div className="text-sm text-gray-600">Pace cuts effective beginning with the NYRR Fred Lebow Half Marathon on January 25, 2026.</div>
-        <div className="text-sm text-gray-600">L corral is omitted.</div>
+        <h1 className="text-2xl font-bold">NYRR Corral Finder</h1>
+        <div className="text-sm text-gray-600">Unofficial tool using NYRR's published best-pace corral cuts (2026).</div>
       </div>
 
-      <RunnerLookup />
-      <ManualCalculator />
+      <div aria-label="Corral finder mode" className="view-tabs" role="tablist">
+        <button
+          aria-controls="nyrr-results-panel"
+          aria-selected={activeView === "results"}
+          className={`view-tab ${activeView === "results" ? "is-active" : ""}`}
+          onClick={() => setActiveView("results")}
+          role="tab"
+          type="button"
+        >
+          NYRR Results
+        </button>
+        <button
+          aria-controls="manual-check-panel"
+          aria-selected={activeView === "manual"}
+          className={`view-tab ${activeView === "manual" ? "is-active" : ""}`}
+          onClick={() => setActiveView("manual")}
+          role="tab"
+          type="button"
+        >
+          Manual Check
+        </button>
+      </div>
+
+      <div hidden={activeView !== "results"} id="nyrr-results-panel" role="tabpanel">
+        <RunnerLookup />
+      </div>
+      <div hidden={activeView !== "manual"} id="manual-check-panel" role="tabpanel">
+        <ManualCalculator />
+      </div>
+      <div className="page-footnote">Manual slider ends at K. Imported results may include L.</div>
     </div>
   );
 }
