@@ -430,6 +430,15 @@ function CurrentBestSummary({ result, results, category }) {
   const racePace = parseTime(race.actualTime) / result.raceInfo.miles;
   const progress = getCorralPercent(calculated.bestPace, calculated.corral);
   const nextTarget = getNextCorralTarget(calculated, category);
+  const nextTargetRaceTime = nextTarget
+    ? (nextTarget.bestPace * RACES["10K"].miles) / result.raceInfo.factor
+    : null;
+  const nextTargetTimeGap = nextTargetRaceTime === null
+    ? null
+    : Math.max(0, parseTime(race.actualTime) - nextTargetRaceTime);
+  const nextTargetPaceGap = nextTargetTimeGap === null
+    ? null
+    : nextTargetTimeGap / result.raceInfo.miles;
   const expiresOn = addYears(race.startDateTime, BEST_PACE_WINDOW_YEARS);
   const bestResultForDistance = (raceKey) => results
     .filter((item) => item.eligibility.eligible && item.raceKey === raceKey && parseTime(item.race.actualTime))
@@ -453,10 +462,6 @@ function CurrentBestSummary({ result, results, category }) {
           <div>
             <span>Race pace</span>
             <strong>{formatPace(racePace)}</strong>
-          </div>
-          <div>
-            <span>10K equivalent</span>
-            <strong>{formatPace(calculated.bestPace)}</strong>
           </div>
         </div>
       </div>
@@ -489,7 +494,13 @@ function CurrentBestSummary({ result, results, category }) {
             <>
               <div className="next-corral-line">
                 <strong>{nextTarget.corral.label}</strong>
-                <span>{formatPace(nextTarget.bestPace)} or faster</span>
+                <span>
+                  {result.raceInfo.label} {formatTime(nextTargetRaceTime)} target
+                  <span aria-hidden="true"> | </span>
+                  {formatTime(nextTargetTimeGap)} faster
+                  <span aria-hidden="true"> | </span>
+                  {formatTime(nextTargetPaceGap)}/mi faster
+                </span>
               </div>
               <div className="target-context">Compared with your recent best at the same distance.</div>
               <div className="target-times" aria-label={`Target finish times for ${nextTarget.corral.label} corral`}>
