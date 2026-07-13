@@ -623,13 +623,6 @@ input[type="range"] {
   color: #fff;
 }
 
-.page-footnote {
-  color: #748091;
-  font-size: 0.75rem;
-  padding-bottom: 0.5rem;
-  text-align: center;
-}
-
 @media (max-width: 640px) {
   .p-6 {
     padding: 1rem;

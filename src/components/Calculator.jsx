@@ -906,7 +906,6 @@ export default function Calculator() {
       <div hidden={activeView !== "manual"} id="manual-check-panel" role="tabpanel">
         <ManualCalculator />
       </div>
-      <div className="page-footnote">Manual slider ends at K. Imported results may include L.</div>
     </div>
   );
 }
