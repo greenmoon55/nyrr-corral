@@ -431,9 +431,12 @@ function CurrentBestSummary({ result, results, category }) {
   const progress = getCorralPercent(calculated.bestPace, calculated.corral);
   const nextTarget = getNextCorralTarget(calculated, category);
   const expiresOn = addYears(race.startDateTime, BEST_PACE_WINDOW_YEARS);
-  const bestTimeForDistance = (raceKey) => results
+  const bestResultForDistance = (raceKey) => results
     .filter((item) => item.eligibility.eligible && item.raceKey === raceKey && parseTime(item.race.actualTime))
-    .reduce((best, item) => Math.min(best, parseTime(item.race.actualTime)), Infinity);
+    .reduce((best, item) => {
+      const time = parseTime(item.race.actualTime);
+      return !best || time < best.time ? { item, time } : best;
+    }, null);
 
   return (
     <section className="best-summary" aria-labelledby="best-summary-title">
@@ -491,15 +494,20 @@ function CurrentBestSummary({ result, results, category }) {
               <div className="target-context">Compared with your recent best at the same distance.</div>
               <div className="target-times" aria-label={`Target finish times for ${nextTarget.corral.label} corral`}>
                 {nextTarget.raceTimes.map(({ raceKey, time }) => {
-                  const currentBestTime = bestTimeForDistance(raceKey);
-                  const timeGap = Number.isFinite(currentBestTime) ? currentBestTime - time : null;
+                  const currentBest = bestResultForDistance(raceKey);
+                  const timeGap = currentBest ? currentBest.time - time : null;
 
                   return (
                     <div className="target-time" key={raceKey}>
                       <span>{raceKey === "Full" ? "Marathon" : RACES[raceKey].label}</span>
                       <strong>{formatTime(time)}</strong>
                       {timeGap !== null && (
-                        <small>{timeGap > 0 ? `${formatTime(timeGap)} faster` : "Target met"}</small>
+                        <>
+                          <small>{timeGap > 0 ? `${formatTime(timeGap)} faster` : "Target met"}</small>
+                          <small className="target-source" title={currentBest.item.race.eventName}>
+                            {currentBest.item.race.eventName}
+                          </small>
+                        </>
                       )}
                     </div>
                   );

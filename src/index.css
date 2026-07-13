@@ -359,6 +359,16 @@ input[type="range"] {
   margin-top: 0.2rem;
 }
 
+.target-time .target-source {
+  color: var(--muted);
+  display: -webkit-box;
+  font-weight: 400;
+  margin-top: 0.15rem;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
 .summary-note {
   border-top: 1px solid #cbdce7;
   color: var(--muted);
