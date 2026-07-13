@@ -435,8 +435,10 @@ input[type="range"] {
 .progression-plot svg {
   display: block;
   height: auto;
+  margin: 0 auto;
+  max-width: 100%;
   overflow: visible;
-  width: 100%;
+  width: auto;
 }
 
 .progression-grid-line {
@@ -473,8 +475,8 @@ input[type="range"] {
 .progression-point.is-active {
   fill: var(--accent-dark);
   outline: none;
-  stroke: #ffffff;
-  stroke-width: 3;
+  stroke: #8fc3dd;
+  stroke-width: 4;
 }
 
 .progression-note {
@@ -697,7 +699,7 @@ input[type="range"] {
   }
 
   .progression-plot svg {
-    min-width: 36rem;
+    max-width: none;
   }
 
   .results-table,

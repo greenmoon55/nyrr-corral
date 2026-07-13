@@ -560,7 +560,8 @@ function BestPaceProgression({ results }) {
 
   if (progression.length < 2) return null;
 
-  const width = 720;
+  const horizontalPadding = 74;
+  const width = Math.min(720, Math.max(260, horizontalPadding + (progression.length - 1) * 56));
   const height = 230;
   const padding = { top: 20, right: 18, bottom: 36, left: 56 };
   const chartWidth = width - padding.left - padding.right;
@@ -602,8 +603,10 @@ function BestPaceProgression({ results }) {
       <div className="progression-plot">
         <svg
           aria-describedby="progression-description"
+          height={height}
           role="img"
           viewBox={`0 0 ${width} ${height}`}
+          width={width}
         >
           <desc id="progression-description">
             Record-setting NYRR results from oldest to newest. Higher points represent faster 10K-equivalent finish times.
@@ -633,7 +636,7 @@ function BestPaceProgression({ results }) {
               onClick={() => setActiveIndex(index)}
               onFocus={() => setActiveIndex(index)}
               onMouseEnter={() => setActiveIndex(index)}
-              r={index === points.length - 1 ? 5.5 : 4}
+              r={index === selectedIndex ? 7 : index === points.length - 1 ? 5.5 : 4}
               role="button"
               tabIndex="0"
             >
