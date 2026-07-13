@@ -538,6 +538,125 @@ function CurrentBestSummary({ result, results, category }) {
   );
 }
 
+function BestPaceProgression({ results }) {
+  const [activeIndex, setActiveIndex] = useState(null);
+  const progression = results
+    .filter((result) => {
+      const raceDate = new Date(result.race.startDateTime);
+      return result.calculated
+        && result.raceInfo?.miles >= BEST_PACE_MINIMUM_MILES
+        && !/\bvirtual\b/i.test(result.race.eventName || "")
+        && !Number.isNaN(raceDate.getTime())
+        && raceDate <= new Date();
+    })
+    .sort((a, b) => new Date(a.race.startDateTime) - new Date(b.race.startDateTime))
+    .reduce((records, result) => {
+      const previousBest = records[records.length - 1];
+      if (!previousBest || result.calculated.bestPace < previousBest.calculated.bestPace) {
+        records.push(result);
+      }
+      return records;
+    }, []);
+
+  if (progression.length < 2) return null;
+
+  const width = 720;
+  const height = 230;
+  const padding = { top: 20, right: 18, bottom: 36, left: 56 };
+  const chartWidth = width - padding.left - padding.right;
+  const chartHeight = height - padding.top - padding.bottom;
+  const paces = progression.map((result) => result.calculated.bestPace);
+  const fastestPace = Math.min(...paces);
+  const slowestPace = Math.max(...paces);
+  const paceRange = Math.max(1, slowestPace - fastestPace);
+  const points = progression.map((result, index) => ({
+    result,
+    x: padding.left + (index / (progression.length - 1)) * chartWidth,
+    y: padding.top + ((result.calculated.bestPace - fastestPace) / paceRange) * chartHeight,
+  }));
+  const yTicks = [fastestPace, (fastestPace + slowestPace) / 2, slowestPace];
+  const first = progression[0];
+  const latest = progression[progression.length - 1];
+  const selectedIndex = activeIndex === null ? progression.length - 1 : Math.min(activeIndex, progression.length - 1);
+  const selected = progression[selectedIndex];
+
+  return (
+    <section className="progression-chart" aria-labelledby="progression-title">
+      <div className="progression-heading">
+        <div>
+          <span className="summary-label">Best Pace Milestones</span>
+          <h3 id="progression-title">{progression.length - 1} improvements</h3>
+        </div>
+        <div className="progression-change">
+          <span>{formatTime(first.calculated.bestPace * RACES["10K"].miles)}</span>
+          <span aria-hidden="true">to</span>
+          <strong>{formatTime(latest.calculated.bestPace * RACES["10K"].miles)}</strong>
+        </div>
+      </div>
+      <div aria-live="polite" className="progression-race-detail">
+        <strong>{selected.race.eventName}</strong>
+        <span>
+          {formatDate(selected.race.startDateTime)} | {selected.raceKey} | {selected.race.actualTime} | 10K equivalent {formatTime(selected.calculated.bestPace * RACES["10K"].miles)} | Corral {selected.calculated.corral.label}
+        </span>
+      </div>
+      <div className="progression-plot">
+        <svg
+          aria-describedby="progression-description"
+          role="img"
+          viewBox={`0 0 ${width} ${height}`}
+        >
+          <desc id="progression-description">
+            Record-setting NYRR results from oldest to newest. Higher points represent faster 10K-equivalent finish times.
+          </desc>
+          {yTicks.map((pace) => {
+            const y = padding.top + ((pace - fastestPace) / paceRange) * chartHeight;
+            return (
+              <g key={pace}>
+                <line className="progression-grid-line" x1={padding.left} x2={width - padding.right} y1={y} y2={y} />
+                <text className="progression-axis-label" textAnchor="end" x={padding.left - 8} y={y + 4}>
+                  {formatTime(pace * RACES["10K"].miles)}
+                </text>
+              </g>
+            );
+          })}
+          <polyline
+            className="progression-line"
+            points={points.map(({ x, y }) => `${x},${y}`).join(" ")}
+          />
+          {points.map(({ result, x, y }, index) => (
+            <circle
+              aria-label={`${result.race.eventName}, ${formatDate(result.race.startDateTime)}, ${result.raceKey} ${result.race.actualTime}, Corral ${result.calculated.corral.label}`}
+              className={`progression-point${index === points.length - 1 ? " is-latest" : ""}${index === selectedIndex ? " is-active" : ""}`}
+              cx={x}
+              cy={y}
+              key={`${result.race.eventCode}-${result.race.startDateTime}`}
+              onClick={() => setActiveIndex(index)}
+              onFocus={() => setActiveIndex(index)}
+              onMouseEnter={() => setActiveIndex(index)}
+              r={index === points.length - 1 ? 5.5 : 4}
+              role="button"
+              tabIndex="0"
+            >
+              <title>
+                {`${formatDate(result.race.startDateTime)} | ${result.race.eventName} | ${result.raceKey} ${result.race.actualTime} | 10K equivalent ${formatTime(result.calculated.bestPace * RACES["10K"].miles)} | Corral ${result.calculated.corral.label}`}
+              </title>
+            </circle>
+          ))}
+          <text className="progression-axis-label" x={padding.left} y={height - 10}>
+            {formatDate(first.race.startDateTime)}
+          </text>
+          <text className="progression-axis-label" textAnchor="end" x={width - padding.right} y={height - 10}>
+            {formatDate(latest.race.startDateTime)}
+          </text>
+        </svg>
+      </div>
+      <p className="progression-note">
+        Based on 10K-equivalent finish time. Only races that improved the previous best are shown.
+      </p>
+    </section>
+  );
+}
+
 function RaceResults({ races, category }) {
   if (!category) {
     return <div className="notice notice-error">Runner category is unavailable, so corrals cannot be calculated.</div>;
@@ -571,6 +690,7 @@ function RaceResults({ races, category }) {
       ) : (
         <div className="notice">No eligible results were found in the current two-year window.</div>
       )}
+      <BestPaceProgression results={evaluatedRaces} />
       {!currentBest && (
         <div className="results-legend">
           <span className="font-semibold">Corral progress</span>
