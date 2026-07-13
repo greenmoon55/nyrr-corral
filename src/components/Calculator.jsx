@@ -18,10 +18,14 @@ const RACES = {
   "25K": { label: "25K", miles: 15.53760099, factor: 0.38 },
   "30K": { label: "30K", miles: 18.64512119, factor: 0.31 },
   "20M": { label: "20M", miles: 20, factor: 0.29 },
-  Full: { label: "Full", miles: 26.22436296, factor: 0.22 },
+  Full: { label: "Marathon", miles: 26.22436296, factor: 0.22 },
 };
 
 const MANUAL_RACES = ["5K", "4M", "5M", "10K", "Half", "Full"];
+const TARGET_RACES = ["5K", "4M", "10K", "10M", "Half", "Full"];
+const BEST_PACE_WINDOW_YEARS = 2;
+const BEST_PACE_MINIMUM_MILES = 3;
+const RIEGEL_EXPONENT = 1.06;
 
 const CATEGORIES = {
   men: { label: "Men", aaLabel: "AA-m" },
@@ -140,9 +144,29 @@ const getCategoryFromGender = (gender) => {
   return null;
 };
 
-const getRaceKeyFromDistance = (distanceName) => {
+const getRaceDefinition = (distanceName) => {
   const normalized = (distanceName || "").toString().toLowerCase().replace(/\s+/g, " ").trim();
-  return DISTANCE_ALIASES[normalized] || null;
+  const raceKey = DISTANCE_ALIASES[normalized];
+  if (raceKey) return { raceKey, raceInfo: RACES[raceKey] };
+
+  const match = normalized.match(/^(\d+(?:\.\d+)?)\s*(kilometers?|km|miles?|mi)$/);
+  if (!match) return { raceKey: null, raceInfo: null };
+
+  const value = Number(match[1]);
+  if (!Number.isFinite(value) || value <= 0) return { raceKey: null, raceInfo: null };
+
+  const isMetric = match[2].startsWith("k");
+  const miles = isMetric ? value * 0.6215040398 : value;
+  const label = isMetric ? `${value}K` : `${value}M`;
+  return {
+    raceKey: label,
+    raceInfo: {
+      estimated: true,
+      factor: (RACES["10K"].miles / miles) ** RIEGEL_EXPONENT,
+      label,
+      miles,
+    },
+  };
 };
 
 const extractRunnerId = (value) => {
@@ -153,24 +177,26 @@ const extractRunnerId = (value) => {
 };
 
 const getCorral = (bestPace, category) => {
-  if (bestPace > paceSeconds("11:36")) {
+  const roundedPace = Math.round(bestPace);
+
+  if (roundedPace > paceSeconds("11:36")) {
     return { label: "L", min: paceSeconds("11:37"), max: paceSeconds("25:00") };
   }
 
   if (category === "men") {
-    if (bestPace <= paceSeconds("5:04")) {
+    if (roundedPace <= paceSeconds("5:04")) {
       return { label: "AA-m", min: paceSeconds("4:00"), max: paceSeconds("5:04") };
     }
-    if (bestPace <= paceSeconds("6:19")) {
+    if (roundedPace <= paceSeconds("6:19")) {
       return { label: "A-m", min: paceSeconds("5:05"), max: paceSeconds("6:19") };
     }
   }
 
-  if (bestPace <= paceSeconds("6:19")) {
+  if (roundedPace <= paceSeconds("6:19")) {
     return { label: CATEGORIES[category].aaLabel, min: paceSeconds("4:00"), max: paceSeconds("6:19") };
   }
 
-  return CORRAL_RANGES.find((range) => bestPace >= range.min && bestPace <= range.max) || CORRAL_RANGES[CORRAL_RANGES.length - 1];
+  return CORRAL_RANGES.find((range) => roundedPace >= range.min && roundedPace <= range.max) || CORRAL_RANGES[CORRAL_RANGES.length - 1];
 };
 
 const getResultCorral = ({ time, raceInfo, category }) => {
@@ -183,6 +209,56 @@ const getCorralPercent = (bestPace, corral) => {
   if (!corral || !Number.isFinite(corral.max) || corral.max === corral.min) return null;
   const percent = ((corral.max - bestPace) / (corral.max - corral.min)) * 100;
   return Math.round(Math.max(0, Math.min(100, percent)));
+};
+
+const getEligibilityWindowStart = () => {
+  const start = new Date();
+  start.setFullYear(start.getFullYear() - BEST_PACE_WINDOW_YEARS);
+  return start;
+};
+
+const getRaceEligibility = (race, raceInfo) => {
+  if (raceInfo && raceInfo.miles < BEST_PACE_MINIMUM_MILES) {
+    return { eligible: false, label: "Below 3-mile minimum" };
+  }
+
+  if (/\bvirtual\b/i.test(race.eventName || "")) {
+    return { eligible: false, label: "Virtual - not eligible" };
+  }
+
+  const raceDate = new Date(race.startDateTime);
+  if (Number.isNaN(raceDate.getTime())) {
+    return { eligible: false, label: "Date unavailable" };
+  }
+
+  const now = new Date();
+  const eligible = raceDate >= getEligibilityWindowStart() && raceDate <= now;
+  return {
+    eligible,
+    label: eligible ? "In best-pace window" : "Outside 2-year window",
+  };
+};
+
+const addYears = (dateString, years) => {
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return null;
+  date.setFullYear(date.getFullYear() + years);
+  return date;
+};
+
+const getNextCorralTarget = (calculated, category) => {
+  const targetBestPace = calculated.corral.min - 1;
+  const nextCorral = getCorral(targetBestPace, category);
+  if (nextCorral.label === calculated.corral.label) return null;
+
+  return {
+    bestPace: targetBestPace,
+    corral: nextCorral,
+    raceTimes: TARGET_RACES.map((raceKey) => ({
+      raceKey,
+      time: (targetBestPace * RACES["10K"].miles) / RACES[raceKey].factor,
+    })),
+  };
 };
 
 const postNyrr = async (path, body) => {
@@ -239,9 +315,11 @@ function RunnerLookup() {
   };
 
   const clearRunner = () => {
+    setQuery("");
     setSelectedRunner(null);
     setRaces([]);
     setCandidates([]);
+    setError("");
     setSearchStatus("idle");
     setRaceStatus("idle");
   };
@@ -287,7 +365,7 @@ function RunnerLookup() {
   return (
     <section className="panel space-y-4">
       <div className="space-y-2">
-        <h2 className="text-xl font-bold">NYRR Result Import</h2>
+        <h2 className="text-xl font-bold">Import NYRR Results</h2>
         <div className="text-sm text-gray-600">Search by runner name, NYRR runner ID, or runner results URL.</div>
       </div>
 
@@ -334,7 +412,7 @@ function RunnerLookup() {
               #{selectedRunner.runnerId} | {[selectedRunner.gender, selectedRunner.age ? `Age ${selectedRunner.age}` : null, runnerLocation(selectedRunner), selectedRunner.teamName].filter(Boolean).join(" | ")}
             </div>
           </div>
-          <button className="px-3 py-1 rounded bg-gray-200" onClick={clearRunner} type="button">Hide results</button>
+          <button className="px-3 py-1 rounded bg-gray-200" onClick={clearRunner} type="button">Clear</button>
         </div>
       )}
 
@@ -343,6 +421,100 @@ function RunnerLookup() {
       {raceStatus === "success" && selectedRunner && (
         <RaceResults races={races} category={selectedCategory} />
       )}
+    </section>
+  );
+}
+
+function CurrentBestSummary({ result, results, category }) {
+  const { race, calculated } = result;
+  const racePace = parseTime(race.actualTime) / result.raceInfo.miles;
+  const progress = getCorralPercent(calculated.bestPace, calculated.corral);
+  const nextTarget = getNextCorralTarget(calculated, category);
+  const expiresOn = addYears(race.startDateTime, BEST_PACE_WINDOW_YEARS);
+  const bestTimeForDistance = (raceKey) => results
+    .filter((item) => item.eligibility.eligible && item.raceKey === raceKey && parseTime(item.race.actualTime))
+    .reduce((best, item) => Math.min(best, parseTime(item.race.actualTime)), Infinity);
+
+  return (
+    <section className="best-summary" aria-labelledby="best-summary-title">
+      <div className="best-summary-heading">
+        <div>
+          <div className="summary-eyebrow">Estimated current best</div>
+          <h3 id="best-summary-title">{race.eventName}</h3>
+          <div className="text-sm text-gray-600">
+            {formatDate(race.startDateTime)} | {result.raceKey} | {race.actualTime}
+            {expiresOn ? ` | Window ends ${formatDate(expiresOn)}` : ""}
+          </div>
+        </div>
+        <div className="best-pace-value">
+          <div>
+            <span>Race pace</span>
+            <strong>{formatPace(racePace)}</strong>
+          </div>
+          <div>
+            <span>10K equivalent</span>
+            <strong>{formatPace(calculated.bestPace)}</strong>
+          </div>
+        </div>
+      </div>
+
+      <div className="summary-grid">
+        <div className="summary-metric summary-progress-card">
+          <span className="summary-label">Corral progress</span>
+          <div className="summary-corral-row">
+            <span className="summary-corral">{calculated.corral.label}</span>
+            {progress !== null && <strong>{progress}%</strong>}
+          </div>
+          {progress !== null && (
+            <div
+              aria-label={`${progress}% toward the faster edge of ${calculated.corral.label} corral`}
+              aria-valuemax="100"
+              aria-valuemin="0"
+              aria-valuenow={progress}
+              className="summary-progress"
+              role="progressbar"
+            >
+              <span style={{ width: `${progress}%` }} />
+            </div>
+          )}
+          <span className="summary-help">Higher means closer to moving up.</span>
+        </div>
+
+        <div className="summary-metric summary-target-card">
+          <span className="summary-label">Next corral target</span>
+          {nextTarget ? (
+            <>
+              <div className="next-corral-line">
+                <strong>{nextTarget.corral.label}</strong>
+                <span>{formatPace(nextTarget.bestPace)} or faster</span>
+              </div>
+              <div className="target-context">Compared with your recent best at the same distance.</div>
+              <div className="target-times" aria-label={`Target finish times for ${nextTarget.corral.label} corral`}>
+                {nextTarget.raceTimes.map(({ raceKey, time }) => {
+                  const currentBestTime = bestTimeForDistance(raceKey);
+                  const timeGap = Number.isFinite(currentBestTime) ? currentBestTime - time : null;
+
+                  return (
+                    <div className="target-time" key={raceKey}>
+                      <span>{raceKey === "Full" ? "Marathon" : RACES[raceKey].label}</span>
+                      <strong>{formatTime(time)}</strong>
+                      {timeGap !== null && (
+                        <small>{timeGap > 0 ? `${formatTime(timeGap)} faster` : "Target met"}</small>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <div className="next-corral-line"><strong>Fastest listed corral</strong></div>
+          )}
+        </div>
+      </div>
+
+      <div className="summary-note">
+        Estimated from eligible NYRR results in the current two-year window. NYRR may apply additional rules.
+      </div>
     </section>
   );
 }
@@ -356,17 +528,41 @@ function RaceResults({ races, category }) {
     return <div className="notice">No races found for this runner.</div>;
   }
 
+  const evaluatedRaces = races.map((race) => {
+    const time = parseTime(race.actualTime);
+    const { raceKey, raceInfo } = getRaceDefinition(race.distanceName);
+    const eligibility = getRaceEligibility(race, raceInfo);
+    let status = null;
+    let calculated = null;
+
+    if (!raceInfo) status = "No corral conversion";
+    else if (!time) status = "Missing official time";
+    else calculated = getResultCorral({ time, raceInfo, category });
+
+    return { race, raceKey, raceInfo, time, eligibility, status, calculated };
+  });
+  const currentBest = evaluatedRaces
+    .filter((result) => result.eligibility.eligible && result.calculated)
+    .sort((a, b) => a.calculated.bestPace - b.calculated.bestPace)[0];
+
   return (
     <div className="results-block">
-      <div className="results-legend">
-        <span className="font-semibold">Corral progress</span>
-        <span>Higher means closer to the faster edge of the corral range.</span>
-      </div>
+      {currentBest ? (
+        <CurrentBestSummary category={category} result={currentBest} results={evaluatedRaces} />
+      ) : (
+        <div className="notice">No eligible results were found in the current two-year window.</div>
+      )}
+      {!currentBest && (
+        <div className="results-legend">
+          <span className="font-semibold">Corral progress</span>
+          <span>Higher means closer to moving up.</span>
+        </div>
+      )}
       <div className="results-wrap">
         <table className="results-table">
         <thead>
           <tr>
-            <th className="corral-column">Corral</th>
+            <th className="corral-column">Corral Estimate</th>
             <th>Race</th>
             <th>Distance</th>
             <th>Time</th>
@@ -374,22 +570,15 @@ function RaceResults({ races, category }) {
           </tr>
         </thead>
         <tbody>
-          {races.map((race) => {
-            const time = parseTime(race.actualTime);
-            const raceKey = getRaceKeyFromDistance(race.distanceName);
-            const raceInfo = raceKey ? RACES[raceKey] : null;
-            let status = null;
-            let calculated = null;
-
-            if (!raceInfo) status = "Unsupported distance";
-            else if (!time) status = "Missing official time";
-            else calculated = getResultCorral({ time, raceInfo, category });
+          {evaluatedRaces.map((result) => {
+            const { race, raceKey, raceInfo, time, eligibility, status, calculated } = result;
+            const isCurrentBest = result === currentBest;
             const resultUrl = getRaceResultUrl(race);
             const corralPercent = calculated ? getCorralPercent(calculated.bestPace, calculated.corral) : null;
 
             return (
-              <tr key={`${race.eventCode}-${race.bib}-${race.startDateTime}`}>
-                <td data-label="Corral">
+              <tr className={isCurrentBest ? "is-current-best" : ""} key={`${race.eventCode}-${race.bib}-${race.startDateTime}`}>
+                <td data-label="Corral Estimate">
                   {status ? (
                     <span className="muted-label">{status}</span>
                   ) : (
@@ -416,17 +605,25 @@ function RaceResults({ races, category }) {
                 </td>
                 <td data-label="Race">
                   <div className="font-medium">
+                    {isCurrentBest && (
+                      <span aria-label="Estimated current best" className="best-result-icon" title="Estimated current best">&#9733;</span>
+                    )}
                     {resultUrl ? (
                       <a href={resultUrl} rel="noreferrer" target="_blank">{race.eventName}</a>
                     ) : (
                       race.eventName
                     )}
                   </div>
-                  <div className="text-sm text-gray-600">{formatDate(race.startDateTime)}{race.bib ? ` | Bib ${race.bib}` : ""}</div>
+                  <div className="race-meta text-sm text-gray-600">
+                    <span>{formatDate(race.startDateTime)}{race.bib ? ` | Bib ${race.bib}` : ""}</span>
+                    <span className={`eligibility-badge ${isCurrentBest ? "is-best" : eligibility.eligible ? "is-eligible" : ""}`}>
+                      {isCurrentBest ? "Best pace" : eligibility.label}
+                    </span>
+                  </div>
                 </td>
                 <td data-label="Distance">{raceKey || race.distanceName || "-"}</td>
                 <td data-label="Time">{race.actualTime || "-"}</td>
-                <td data-label="Pace">{race.actualPace ? `${race.actualPace}/mi` : calculated ? formatPace(calculated.bestPace) : "-"}</td>
+                <td data-label="Pace">{race.actualPace ? `${race.actualPace}/mi` : time && raceInfo ? formatPace(time / raceInfo.miles) : "-"}</td>
               </tr>
             );
           })}
@@ -476,9 +673,7 @@ function ManualCalculator() {
       ? `${formatTime(bestPaceToRaceTime(corral.min))}+`
       : `${formatPace(corral.min)}+`;
 
-  const progressPercent = Number.isFinite(corral.max)
-    ? ((bestPace - corral.min) / (corral.max - corral.min)) * 100
-    : 100;
+  const progressPercent = getCorralPercent(bestPace, corral) ?? 0;
 
   return (
     <section className="panel space-y-6">
@@ -538,11 +733,12 @@ export default function Calculator() {
   return (
     <div className="p-6 space-y-6 max-w-4xl mx-auto">
       <div className="space-y-2">
-        <h1 className="text-2xl font-bold">NYRR Corral Finder</h1>
+        <h1 className="text-2xl font-bold">NYRR Corral Progress</h1>
         <div className="text-sm text-gray-600">Unofficial tool using NYRR's published best-pace corral cuts (2026).</div>
+        <div className="text-sm text-gray-600">Import NYRR results or check a race time to see your corral progress and next target.</div>
       </div>
 
-      <div aria-label="Corral finder mode" className="view-tabs" role="tablist">
+      <div aria-label="Corral progress mode" className="view-tabs" role="tablist">
         <button
           aria-controls="nyrr-results-panel"
           aria-selected={activeView === "results"}
