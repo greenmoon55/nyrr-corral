@@ -127,6 +127,12 @@ const formatDate = (dateString) => {
   return date.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
 };
 
+const formatChartMonth = (dateString) => {
+  const date = new Date(dateString);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleDateString("en-US", { year: "numeric", month: "short" });
+};
+
 const parseTime = (value) => {
   if (!value) return null;
   const parts = value.split(":").map(Number);
@@ -561,7 +567,8 @@ function BestPaceProgression({ results }) {
   if (progression.length < 2) return null;
 
   const horizontalPadding = 74;
-  const width = Math.min(720, Math.max(260, horizontalPadding + (progression.length - 1) * 56));
+  const pointSpacing = progression.length <= 6 ? 72 : 56;
+  const width = Math.min(720, Math.max(260, horizontalPadding + (progression.length - 1) * pointSpacing));
   const height = 230;
   const padding = { top: 20, right: 18, bottom: 36, left: 56 };
   const chartWidth = width - padding.left - padding.right;
@@ -578,6 +585,16 @@ function BestPaceProgression({ results }) {
   const yTicks = [fastestPace, (fastestPace + slowestPace) / 2, slowestPace];
   const first = progression[0];
   const latest = progression[progression.length - 1];
+  const dateLabelStep = Math.max(1, Math.ceil(progression.length / 6));
+  const dateLabelIndexes = progression
+    .map((_, index) => index)
+    .filter((index) => index % dateLabelStep === 0);
+  const lastDateIndex = progression.length - 1;
+  const lastShownDateIndex = dateLabelIndexes[dateLabelIndexes.length - 1];
+  if (lastShownDateIndex !== lastDateIndex) {
+    if (lastDateIndex - lastShownDateIndex < dateLabelStep) dateLabelIndexes.pop();
+    dateLabelIndexes.push(lastDateIndex);
+  }
   const selectedIndex = activeIndex === null ? progression.length - 1 : Math.min(activeIndex, progression.length - 1);
   const selected = progression[selectedIndex];
 
@@ -645,12 +662,17 @@ function BestPaceProgression({ results }) {
               </title>
             </circle>
           ))}
-          <text className="progression-axis-label" x={padding.left} y={height - 10}>
-            {formatDate(first.race.startDateTime)}
-          </text>
-          <text className="progression-axis-label" textAnchor="end" x={width - padding.right} y={height - 10}>
-            {formatDate(latest.race.startDateTime)}
-          </text>
+          {dateLabelIndexes.map((index) => (
+            <text
+              className="progression-axis-label"
+              key={index}
+              textAnchor={index === 0 ? "start" : index === progression.length - 1 ? "end" : "middle"}
+              x={points[index].x}
+              y={height - 10}
+            >
+              {formatChartMonth(progression[index].race.startDateTime)}
+            </text>
+          ))}
         </svg>
       </div>
       <p className="progression-note">
