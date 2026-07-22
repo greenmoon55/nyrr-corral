@@ -318,6 +318,10 @@ const getRaceResultUrl = (race) => {
 function RunnerLookup() {
   const [query, setQuery] = useState("");
   const [candidates, setCandidates] = useState([]);
+  const [candidatePage, setCandidatePage] = useState(1);
+  const [candidateQuery, setCandidateQuery] = useState("");
+  const [candidateTotal, setCandidateTotal] = useState(0);
+  const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [selectedRunner, setSelectedRunner] = useState(null);
   const [races, setRaces] = useState([]);
   const [searchStatus, setSearchStatus] = useState("idle");
@@ -354,6 +358,10 @@ function RunnerLookup() {
     setSelectedRunner(null);
     setRaces([]);
     setCandidates([]);
+    setCandidatePage(1);
+    setCandidateQuery("");
+    setCandidateTotal(0);
+    setIsLoadingMore(false);
     setError("");
     setSearchStatus("idle");
     setRaceStatus("idle");
@@ -366,6 +374,9 @@ function RunnerLookup() {
 
     setError("");
     setCandidates([]);
+    setCandidatePage(1);
+    setCandidateQuery(trimmed);
+    setCandidateTotal(0);
     setSelectedRunner(null);
     setRaces([]);
     setSearchStatus("loading");
@@ -388,10 +399,37 @@ function RunnerLookup() {
         sortDescending: false,
       });
       setCandidates(data.items || []);
+      setCandidateTotal(data.totalItems || data.items?.length || 0);
       setSearchStatus("success");
     } catch (e) {
       setError(e.message || "Could not search NYRR results.");
       setSearchStatus("error");
+    }
+  };
+
+  const loadMoreCandidates = async () => {
+    if (isLoadingMore || candidates.length >= candidateTotal) return;
+
+    const nextPage = candidatePage + 1;
+    setError("");
+    setIsLoadingMore(true);
+    try {
+      const data = await postNyrr("/runners/search", {
+        searchString: candidateQuery,
+        pageIndex: nextPage,
+        pageSize: 12,
+        sortDescending: false,
+      });
+      setCandidates((current) => {
+        const existingIds = new Set(current.map((runner) => runner.runnerId));
+        return [...current, ...(data.items || []).filter((runner) => !existingIds.has(runner.runnerId))];
+      });
+      setCandidatePage(nextPage);
+      setCandidateTotal(data.totalItems || candidateTotal);
+    } catch (e) {
+      setError(e.message || "Could not load more runners.");
+    } finally {
+      setIsLoadingMore(false);
     }
   };
 
@@ -401,7 +439,6 @@ function RunnerLookup() {
     <section className="panel space-y-4">
       <div className="space-y-2">
         <h2 className="text-xl font-bold">Import NYRR Results</h2>
-        <div className="text-sm text-gray-600">Search by runner name, NYRR runner ID, or runner results URL.</div>
       </div>
 
       <form className="lookup-form" onSubmit={searchRunner}>
@@ -436,6 +473,11 @@ function RunnerLookup() {
               </button>
             ))}
           </div>
+          {candidates.length < candidateTotal && (
+            <button className="load-more-button" disabled={isLoadingMore} onClick={loadMoreCandidates} type="button">
+              {isLoadingMore ? "Loading" : "Load more"}
+            </button>
+          )}
         </div>
       )}
 
@@ -486,7 +528,7 @@ function CurrentBestSummary({ result, results, category }) {
     <section className="best-summary" aria-labelledby="best-summary-title">
       <div className="best-summary-heading">
         <div>
-          <div className="summary-eyebrow">Estimated current best</div>
+          <div className="summary-eyebrow">Current Best</div>
           <h3 id="best-summary-title">{race.eventName}</h3>
           <div className="text-sm text-gray-600">
             {formatDate(race.startDateTime)} | {result.raceKey} | {race.actualTime}
@@ -537,7 +579,7 @@ function CurrentBestSummary({ result, results, category }) {
                   {formatTime(nextTargetPaceGap)}/mi faster
                 </span>
               </div>
-              <div className="target-context">Compared with your recent best at the same distance.</div>
+              <div className="target-context">Compared with your recent best.</div>
               <div className="target-times" aria-label={`Target finish times for ${nextTarget.corral.label} corral`}>
                 {nextTarget.raceTimes.map(({ raceKey, time }) => {
                   const currentBest = bestResultForDistance(raceKey);
@@ -705,7 +747,7 @@ function BestPaceProgression({ results }) {
         </svg>
       </div>
       <p className="progression-note">
-        Based on 10K-equivalent finish time. Only races that improved the previous best are shown.
+        10K-equivalent time. Only new bests are shown.
       </p>
     </section>
   );
@@ -799,7 +841,7 @@ function RaceResults({ races, category }) {
                 <td data-label="Race">
                   <div className="font-medium">
                     {isCurrentBest && (
-                      <span aria-label="Estimated current best" className="best-result-icon" title="Estimated current best">&#9733;</span>
+                      <span aria-label="Current best" className="best-result-icon" title="Current best">&#9733;</span>
                     )}
                     {resultUrl ? (
                       <a href={resultUrl} rel="noreferrer" target="_blank">{race.eventName}</a>
@@ -876,7 +918,7 @@ function ManualCalculator() {
   return (
     <section className="panel space-y-6">
       <div className="space-y-2">
-        <h2 className="text-xl font-bold">Manual Result Check</h2>
+        <h2 className="text-xl font-bold">Manual Check</h2>
       </div>
 
       <div className="space-y-2">
@@ -889,7 +931,7 @@ function ManualCalculator() {
       </div>
 
       <div className="space-y-2">
-        <label className="font-medium">Race Distance</label>
+        <label className="font-medium">Distance</label>
         <select className="p-2 rounded border" value={race} onChange={(e) => setRace(e.target.value)}>
           {MANUAL_RACES.map((raceKey) => (
             <option key={raceKey} value={raceKey}>{RACES[raceKey].label}</option>
@@ -898,7 +940,7 @@ function ManualCalculator() {
       </div>
 
       <div className="space-y-2">
-        <label className="font-medium">Input Mode</label>
+        <label className="font-medium">Input</label>
         <div className="flex gap-4">
           <button className={`px-3 py-1 rounded ${mode === "time" ? "bg-black text-white" : "bg-gray-200"}`} onClick={() => setMode("time")}>Time</button>
           <button className={`px-3 py-1 rounded ${mode === "pace" ? "bg-black text-white" : "bg-gray-200"}`} onClick={() => setMode("pace")}>Pace</button>
@@ -914,7 +956,7 @@ function ManualCalculator() {
       <div className="p-4 rounded-xl bg-gray-100 space-y-4">
         <div className="text-lg">Corral: <span className="font-bold text-xl manual-corral-value">{corral.label}</span></div>
         <div className="space-y-2">
-          <div className="text-sm text-gray-600">Corral Range</div>
+          <div className="text-sm text-gray-600">Range</div>
           <div className="w-full h-3 bg-gray-300 rounded-full relative">
             <div className="h-3 bg-black rounded-full" style={{ width: `${Math.max(0, Math.min(100, progressPercent))}%` }} />
           </div>
