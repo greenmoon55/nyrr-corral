@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useMemo, useState } from "react";
 
 const NYRR_API = "https://rmsprodapi.nyrr.org/api/v2";
 
@@ -51,15 +51,6 @@ const CORRAL_RANGES = [
   { label: "J", min: paceSeconds("9:52"), max: paceSeconds("10:30") },
   { label: "K", min: paceSeconds("10:31"), max: paceSeconds("11:36") },
 ];
-
-const SLIDER_RANGES = {
-  "5K": { timeMax: 2177, paceMax: paceSeconds("11:36") },
-  "4M": { timeMax: 2849, paceMax: paceSeconds("11:36") },
-  "5M": { timeMax: 3611, paceMax: paceSeconds("11:36") },
-  "10K": { timeMax: 4326, paceMax: paceSeconds("11:36") },
-  Half: { timeMax: 9612, paceMax: paceSeconds("11:36") },
-  Full: { timeMax: 19661, paceMax: paceSeconds("11:36") },
-};
 
 const DISTANCE_ALIASES = {
   "5 kilometers": "5K",
@@ -209,6 +200,44 @@ const getResultCorral = ({ time, raceInfo, category }) => {
   const best10KTime = time * raceInfo.factor;
   const bestPace = best10KTime / RACES["10K"].miles;
   return { bestPace, corral: getCorral(bestPace, category) };
+};
+
+const manualValueToTime = (value, mode, raceInfo) => (
+  mode === "time" ? value : Math.round(value * raceInfo.miles)
+);
+
+const getManualSliderLimits = (mode, raceInfo) => {
+  const minimumBestPace = paceSeconds("4:00");
+  const maximumBestPace = paceSeconds("11:36");
+  const timeScale = RACES["10K"].miles / raceInfo.factor;
+  const searchMax = mode === "time"
+    ? Math.ceil((maximumBestPace + 1) * timeScale) + 2
+    : Math.ceil(((maximumBestPace + 1) * timeScale) / raceInfo.miles) + 2;
+  const min = mode === "time" ? Math.floor(minimumBestPace * timeScale) : minimumBestPace;
+  let max = null;
+
+  for (let value = min; value <= searchMax; value += 1) {
+    const time = manualValueToTime(value, mode, raceInfo);
+    const roundedBestPace = Math.round((time * raceInfo.factor) / RACES["10K"].miles);
+    if (roundedBestPace <= maximumBestPace) {
+      max = value;
+    } else if (max !== null && roundedBestPace > maximumBestPace) {
+      break;
+    }
+  }
+
+  return { min, max };
+};
+
+const getManualCorralRanges = ({ category, max, min, mode, raceInfo }) => {
+  const ranges = {};
+  for (let value = min; value <= max; value += 1) {
+    const time = manualValueToTime(value, mode, raceInfo);
+    const label = getResultCorral({ time, raceInfo, category }).corral.label;
+    if (!ranges[label]) ranges[label] = { min: value, max: value };
+    else ranges[label].max = value;
+  }
+  return ranges;
 };
 
 const getCorralPercent = (bestPace, corral) => {
@@ -821,21 +850,26 @@ function ManualCalculator() {
     setSeconds(paceToTime(p));
   };
 
-  const enteredTime = mode === "time" ? seconds : paceToTime(pace);
+  const sliderLimits = useMemo(() => getManualSliderLimits(mode, raceInfo), [mode, raceInfo]);
+  const rawSliderValue = mode === "time" ? seconds : pace;
+  const sliderValue = Math.max(sliderLimits.min, Math.min(sliderLimits.max, rawSliderValue));
+  const enteredTime = manualValueToTime(sliderValue, mode, raceInfo);
   const { bestPace, corral } = getResultCorral({ time: enteredTime, raceInfo, category });
-  const sliderValue = mode === "time" ? seconds : pace;
   const sliderOnChange = (e) => mode === "time" ? updateTime(Number(e.target.value)) : updatePace(Number(e.target.value));
-  const bestPaceToRaceTime = (p) => (p * RACES["10K"].miles) / raceInfo.factor;
-  const fastestPace = paceSeconds("4:00");
-  const sliderMin = mode === "time" ? Math.floor(bestPaceToRaceTime(fastestPace)) : fastestPace;
-  const sliderMax = mode === "time" ? SLIDER_RANGES[race].timeMax : SLIDER_RANGES[race].paceMax;
-  const corralRange = Number.isFinite(corral.max)
-    ? mode === "time"
-      ? `${formatTime(bestPaceToRaceTime(corral.min))} - ${formatTime(bestPaceToRaceTime(corral.max))}`
-      : `${formatPace(corral.min)} - ${formatPace(corral.max)}`
-    : mode === "time"
-      ? `${formatTime(bestPaceToRaceTime(corral.min))}+`
-      : `${formatPace(corral.min)}+`;
+  const corralRanges = useMemo(
+    () => getManualCorralRanges({
+      category,
+      max: sliderLimits.max,
+      min: sliderLimits.min,
+      mode,
+      raceInfo,
+    }),
+    [category, mode, raceInfo, sliderLimits.max, sliderLimits.min],
+  );
+  const currentRange = corralRanges[corral.label];
+  const corralRange = mode === "time"
+    ? `${formatTime(currentRange.min)} - ${formatTime(currentRange.max)}`
+    : `${formatPace(currentRange.min)} - ${formatPace(currentRange.max)}`;
 
   const progressPercent = getCorralPercent(bestPace, corral) ?? 0;
 
@@ -873,8 +907,8 @@ function ManualCalculator() {
 
       <div className="space-y-2">
         <label className="font-medium">{mode === "time" ? "Race Time" : "Pace (min/mile)"}</label>
-        <input type="range" min={sliderMin} max={sliderMax} value={sliderValue} onChange={sliderOnChange} className="w-full" />
-        <div className="text-xl font-semibold">{mode === "time" ? formatTime(seconds) : formatPace(pace)}</div>
+        <input type="range" min={sliderLimits.min} max={sliderLimits.max} value={sliderValue} onChange={sliderOnChange} className="w-full" />
+        <div className="text-xl font-semibold">{mode === "time" ? formatTime(sliderValue) : formatPace(sliderValue)}</div>
       </div>
 
       <div className="p-4 rounded-xl bg-gray-100 space-y-4">
