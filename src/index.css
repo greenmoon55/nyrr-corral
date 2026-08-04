@@ -553,7 +553,13 @@ input[type="range"] {
 
 .corral-label {
   background: var(--corral);
+  box-sizing: border-box;
   color: #fff;
+  justify-self: center;
+  min-width: 2.5rem;
+  padding-left: 0.5rem;
+  padding-right: 0.5rem;
+  text-align: center;
 }
 
 .manual-corral-value {
@@ -562,8 +568,9 @@ input[type="range"] {
 
 .corral-cell-content {
   align-items: center;
-  display: flex;
-  gap: 0.65rem;
+  display: grid;
+  gap: 0.4rem;
+  grid-template-columns: 3.5rem 7.5rem;
 }
 
 .corral-progress-row {
