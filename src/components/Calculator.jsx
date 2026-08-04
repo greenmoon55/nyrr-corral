@@ -438,7 +438,7 @@ function RunnerLookup() {
   return (
     <section className="panel space-y-4">
       <div className="space-y-2">
-        <h2 className="text-xl font-bold">Import NYRR Results</h2>
+        <h2 className="text-xl font-bold">Check NYRR Results</h2>
       </div>
 
       <form className="lookup-form" onSubmit={searchRunner}>
@@ -858,7 +858,7 @@ function RaceResults({ races, category }) {
                 </td>
                 <td data-label="Distance">{raceKey || race.distanceName || "-"}</td>
                 <td data-label="Time">{race.actualTime || "-"}</td>
-                <td data-label="Pace">{race.actualPace ? `${race.actualPace}/mi` : time && raceInfo ? formatPace(time / raceInfo.miles) : "-"}</td>
+                <td className="pace-cell" data-label="Pace">{race.actualPace ? `${race.actualPace}/mi` : time && raceInfo ? formatPace(time / raceInfo.miles) : "-"}</td>
               </tr>
             );
           })}
@@ -975,7 +975,7 @@ export default function Calculator() {
       <div className="space-y-2">
         <h1 className="text-2xl font-bold">NYRR Corral Progress</h1>
         <div className="text-sm text-gray-600">Unofficial tool using NYRR's published best-pace corral cuts (2026).</div>
-        <div className="text-sm text-gray-600">Import NYRR results or check a race time to see your corral progress and next target.</div>
+        <div className="text-sm text-gray-600">Look up NYRR results or check a race time to see your corral progress and next target.</div>
       </div>
 
       <div aria-label="Corral progress mode" className="view-tabs" role="tablist">
@@ -1007,6 +1007,10 @@ export default function Calculator() {
       <div hidden={activeView !== "manual"} id="manual-check-panel" role="tabpanel">
         <ManualCalculator />
       </div>
+
+      <footer className="site-footer">
+        Built by greenmoon55
+      </footer>
     </div>
   );
 }
