@@ -507,15 +507,6 @@ function CurrentBestSummary({ result, results, category }) {
   const racePace = parseTime(race.actualTime) / result.raceInfo.miles;
   const progress = getCorralPercent(calculated.bestPace, calculated.corral);
   const nextTarget = getNextCorralTarget(calculated, category);
-  const nextTargetRaceTime = nextTarget
-    ? (nextTarget.bestPace * RACES["10K"].miles) / result.raceInfo.factor
-    : null;
-  const nextTargetTimeGap = nextTargetRaceTime === null
-    ? null
-    : Math.max(0, parseTime(race.actualTime) - nextTargetRaceTime);
-  const nextTargetPaceGap = nextTargetTimeGap === null
-    ? null
-    : nextTargetTimeGap / result.raceInfo.miles;
   const expiresOn = addYears(race.startDateTime, BEST_PACE_WINDOW_YEARS);
   const bestResultForDistance = (raceKey) => results
     .filter((item) => item.eligibility.eligible && item.raceKey === raceKey && parseTime(item.race.actualTime))
@@ -566,28 +557,22 @@ function CurrentBestSummary({ result, results, category }) {
         </div>
 
         <div className="summary-metric summary-target-card">
-          <span className="summary-label">Next corral target</span>
+          <span className="summary-label">{nextTarget ? `To reach Corral ${nextTarget.corral.label}` : "Corral target"}</span>
           {nextTarget ? (
             <>
-              <div className="next-corral-line">
-                <strong>{nextTarget.corral.label}</strong>
-                <span>
-                  {result.raceInfo.label} {formatTime(nextTargetRaceTime)} target
-                  <span aria-hidden="true"> | </span>
-                  {formatTime(nextTargetTimeGap)} faster
-                  <span aria-hidden="true"> | </span>
-                  {formatTime(nextTargetPaceGap)}/mi faster
-                </span>
-              </div>
-              <div className="target-context">Compared with your recent best.</div>
+              <div className="target-context">Finish times needed at each distance.</div>
               <div className="target-times" aria-label={`Target finish times for ${nextTarget.corral.label} corral`}>
                 {nextTarget.raceTimes.map(({ raceKey, time }) => {
                   const currentBest = bestResultForDistance(raceKey);
                   const timeGap = currentBest ? currentBest.time - time : null;
+                  const isCurrentBestDistance = raceKey === result.raceKey;
 
                   return (
-                    <div className="target-time" key={raceKey}>
-                      <span>{raceKey === "Full" ? "Marathon" : RACES[raceKey].label}</span>
+                    <div className={`target-time ${isCurrentBestDistance ? "is-current-best-distance" : ""}`} key={raceKey}>
+                      <div className="target-time-heading">
+                        <span>{raceKey === "Full" ? "Marathon" : RACES[raceKey].label}</span>
+                        {isCurrentBestDistance && <small className="target-best-marker">Current best</small>}
+                      </div>
                       <strong>{formatTime(time)}</strong>
                       {timeGap !== null && (
                         <>
