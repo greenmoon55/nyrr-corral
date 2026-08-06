@@ -281,15 +281,19 @@ const addYears = (dateString, years) => {
   return date;
 };
 
-const getNextCorralTarget = (calculated, category) => {
+const getNextCorralTarget = (calculated, category, currentBestRaceKey) => {
   const targetBestPace = calculated.corral.min - 1;
   const nextCorral = getCorral(targetBestPace, category);
   if (nextCorral.label === calculated.corral.label) return null;
 
+  const targetRaceKeys = TARGET_RACES.includes(currentBestRaceKey)
+    ? TARGET_RACES
+    : TARGET_RACES.map((raceKey) => (raceKey === "10M" ? currentBestRaceKey : raceKey));
+
   return {
     bestPace: targetBestPace,
     corral: nextCorral,
-    raceTimes: TARGET_RACES.map((raceKey) => ({
+    raceTimes: targetRaceKeys.map((raceKey) => ({
       raceKey,
       time: (targetBestPace * RACES["10K"].miles) / RACES[raceKey].factor,
     })),
@@ -506,7 +510,7 @@ function CurrentBestSummary({ result, results, category }) {
   const { race, calculated } = result;
   const racePace = parseTime(race.actualTime) / result.raceInfo.miles;
   const progress = getCorralPercent(calculated.bestPace, calculated.corral);
-  const nextTarget = getNextCorralTarget(calculated, category);
+  const nextTarget = getNextCorralTarget(calculated, category, result.raceKey);
   const expiresOn = addYears(race.startDateTime, BEST_PACE_WINDOW_YEARS);
   const bestResultForDistance = (raceKey) => results
     .filter((item) => item.eligibility.eligible && item.raceKey === raceKey && parseTime(item.race.actualTime))
@@ -560,7 +564,7 @@ function CurrentBestSummary({ result, results, category }) {
           <span className="summary-label">{nextTarget ? `To reach Corral ${nextTarget.corral.label}` : "Corral target"}</span>
           {nextTarget ? (
             <>
-              <div className="target-context">Finish times needed at each distance.</div>
+              <div className="target-context">Hit any one of these times or faster.</div>
               <div className="target-times" aria-label={`Target finish times for ${nextTarget.corral.label} corral`}>
                 {nextTarget.raceTimes.map(({ raceKey, time }) => {
                   const currentBest = bestResultForDistance(raceKey);
@@ -573,14 +577,16 @@ function CurrentBestSummary({ result, results, category }) {
                         <span>{raceKey === "Full" ? "Marathon" : RACES[raceKey].label}</span>
                         {isCurrentBestDistance && <small className="target-best-marker">Current best</small>}
                       </div>
-                      <strong>{formatTime(time)}</strong>
+                      <strong>{formatTime(time)} target</strong>
                       {timeGap !== null && (
-                        <>
-                          <small>{timeGap > 0 ? `${formatTime(timeGap)} faster` : "Target met"}</small>
-                          <small className="target-source" title={currentBest.item.race.eventName}>
-                            {currentBest.item.race.eventName}
-                          </small>
-                        </>
+                        <small>
+                          Best {formatTime(currentBest.time)} | {timeGap > 0 ? `${formatTime(timeGap)} faster` : "Target met"}
+                        </small>
+                      )}
+                      {currentBest && (
+                        <small className="target-source" title={currentBest.item.race.eventName}>
+                          {currentBest.item.race.eventName}
+                        </small>
                       )}
                     </div>
                   );
