@@ -563,9 +563,7 @@ function CurrentBestSummary({ result, results, category }) {
         <div className="summary-metric summary-target-card">
           <span className="summary-label">{nextTarget ? `To reach Corral ${nextTarget.corral.label}` : "Corral target"}</span>
           {nextTarget ? (
-            <>
-              <div className="target-context">Hit any one of these times or faster.</div>
-              <div className="target-times" aria-label={`Target finish times for ${nextTarget.corral.label} corral`}>
+            <div className="target-times" aria-label={`Target finish times for ${nextTarget.corral.label} corral`}>
                 {nextTarget.raceTimes.map(({ raceKey, time }) => {
                   const currentBest = bestResultForDistance(raceKey);
                   const timeGap = currentBest ? currentBest.time - time : null;
@@ -591,8 +589,7 @@ function CurrentBestSummary({ result, results, category }) {
                     </div>
                   );
                 })}
-              </div>
-            </>
+            </div>
           ) : (
             <div className="next-corral-line"><strong>Fastest listed corral</strong></div>
           )}
@@ -600,7 +597,7 @@ function CurrentBestSummary({ result, results, category }) {
       </div>
 
       <div className="summary-note">
-        Estimated from eligible NYRR results in the current two-year window. NYRR may apply additional rules.
+        Estimated from eligible results over the past two years.
       </div>
     </section>
   );
@@ -966,7 +963,6 @@ export default function Calculator() {
       <div className="space-y-2">
         <h1 className="text-2xl font-bold">NYRR Corral Progress</h1>
         <div className="text-sm text-gray-600">Unofficial tool using NYRR's published best-pace corral cuts (2026).</div>
-        <div className="text-sm text-gray-600">Look up NYRR results or check a race time to see your corral progress and next target.</div>
       </div>
 
       <div aria-label="Corral progress mode" className="view-tabs" role="tablist">
