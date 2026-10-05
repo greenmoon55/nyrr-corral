@@ -1,4 +1,5 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import ShareProgress from "./ShareProgress";
 
 const NYRR_API = "https://rmsprodapi.nyrr.org/api/v2";
 
@@ -320,6 +321,34 @@ const getRaceResultUrl = (race) => {
 };
 
 function RunnerLookup() {
+  useEffect(() => {
+    let cancelled = false;
+    let generation = 0;
+    const loadSharedRunner = () => {
+    const request = ++generation;
+    const params = new URLSearchParams(window.location.hash.slice(1));
+    const id = params.get("runner");
+    if (!/^\d+$/.test(id || "")) return;
+    setError("");
+    setSelectedRunner(null);
+    setRaces([]);
+    setQuery(id);
+    setSearchStatus("loading");
+    postNyrr("/runners/details", { runnerId: id }).then((data) => {
+      if (cancelled || request !== generation) return;
+      setSearchStatus("success");
+      selectRunner({ ...(data.details || data), runnerId: id });
+    }).catch(() => {
+      if (!cancelled && request === generation) {
+        setError("Could not open shared runner. Please try searching again.");
+        setSearchStatus("error");
+      }
+    });
+    };
+    loadSharedRunner();
+    window.addEventListener("hashchange", loadSharedRunner);
+    return () => { cancelled = true; window.removeEventListener("hashchange", loadSharedRunner); };
+  }, []);
   const [query, setQuery] = useState("");
   const [candidates, setCandidates] = useState([]);
   const [candidatePage, setCandidatePage] = useState(1);
@@ -500,7 +529,7 @@ function RunnerLookup() {
       {raceStatus === "loading" && <div className="notice">Loading races...</div>}
 
       {raceStatus === "success" && selectedRunner && (
-        <RaceResults races={races} category={selectedCategory} />
+        <RaceResults races={races} category={selectedCategory} runner={selectedRunner} />
       )}
     </section>
   );
@@ -741,7 +770,7 @@ function BestPaceProgression({ results }) {
   );
 }
 
-function RaceResults({ races, category }) {
+function RaceResults({ races, category, runner }) {
   if (!category) {
     return <div className="notice notice-error">Runner category is unavailable, so corrals cannot be calculated.</div>;
   }
@@ -769,6 +798,14 @@ function RaceResults({ races, category }) {
 
   return (
     <div className="results-block">
+      <ShareProgress
+        runner={runner}
+        best={currentBest}
+        results={evaluatedRaces}
+        target={currentBest ? getNextCorralTarget(currentBest.calculated, category, currentBest.raceKey) : null}
+        formatTime={formatTime}
+        tenKMiles={RACES["10K"].miles}
+      />
       {currentBest ? (
         <CurrentBestSummary category={category} result={currentBest} results={evaluatedRaces} />
       ) : (
