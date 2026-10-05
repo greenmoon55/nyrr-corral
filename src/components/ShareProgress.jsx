@@ -1,20 +1,29 @@
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 
 export default function ShareProgress({ runner, best, results, target, formatTime, tenKMiles }) {
   const [hidden, setHidden] = useState(false);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [copied, setCopied] = useState(false);
+  const copyTimer = useRef(null);
+  useEffect(() => {
+    setCopied(false);
+    return () => clearTimeout(copyTimer.current);
+  }, [runner.runnerId]);
   const name = [runner.firstName, runner.lastName].filter(Boolean).join(" ") || "Runner";
   const title = hidden ? "NYRR Corral Progress" : `${name}'s NYRR Progress`;
-  const url = new URL("https://nyrr-corral.netlify.app/");
-  url.hash = new URLSearchParams({ runner: String(runner.runnerId) }).toString();
 
-  async function copyLink() {
+  async function copyRunnerLink() {
+    const url = new URL("https://nyrr-corral.netlify.app/");
+    url.hash = new URLSearchParams({ runner: String(runner.runnerId) }).toString();
     try {
-      await navigator.clipboard.writeText(`${title}\n${url.href}`);
-      setMessage("Link copied. The link opens this runner's public results.");
+      await navigator.clipboard.writeText(url.href);
+      setMessage("");
+      setCopied(true);
+      clearTimeout(copyTimer.current);
+      copyTimer.current = setTimeout(() => setCopied(false), 2000);
     } catch {
-      setMessage("Could not copy. Select the link below to copy it manually.");
+      setMessage("Could not copy. Copy the URL from your address bar instead.");
     }
   }
 
@@ -90,11 +99,10 @@ export default function ShareProgress({ runner, best, results, target, formatTim
 
   return <div className="share-progress">
     <div className="share-progress-actions">
-      <button type="button" onClick={download} disabled={busy}>{busy ? "Creating image..." : "Download progress"}</button>
-      <button type="button" onClick={copyLink}>Copy link</button>
+      <button type="button" onClick={download} disabled={busy}>{busy ? "Exporting..." : "Export image"}</button>
+      <button type="button" onClick={copyRunnerLink} style={{ minWidth: "9rem" }} aria-live="polite">{copied ? "Copied!" : "Copy runner link"}</button>
       <label><input type="checkbox" checked={hidden} onChange={(e) => setHidden(e.target.checked)} /> Hide name on image</label>
     </div>
-    <a href={url.href}>{title}</a>
     {message && <div role="status">{message}</div>}
   </div>;
 }

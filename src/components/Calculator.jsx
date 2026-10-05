@@ -381,12 +381,18 @@ function RunnerLookup() {
   };
 
   const selectRunner = async (runner) => {
+    const url = new URL(window.location.href);
+    url.hash = new URLSearchParams({ runner: String(runner.runnerId) }).toString();
+    window.history.replaceState(null, "", url);
     setSelectedRunner(runner);
     setCandidates([]);
     await fetchRaces(runner);
   };
 
   const clearRunner = () => {
+    const url = new URL(window.location.href);
+    url.hash = "";
+    window.history.replaceState(null, "", url);
     setQuery("");
     setSelectedRunner(null);
     setRaces([]);
@@ -419,7 +425,7 @@ function RunnerLookup() {
       const runnerId = extractRunnerId(trimmed);
       if (runnerId) {
         const data = await postNyrr("/runners/details", { runnerId });
-        const runner = data.details || data;
+        const runner = { ...(data.details || data), runnerId };
         setSearchStatus("success");
         await selectRunner(runner);
         return;
