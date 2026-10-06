@@ -29,9 +29,9 @@ const BEST_PACE_MINIMUM_MILES = 3;
 const RIEGEL_EXPONENT = 1.06;
 
 const CATEGORIES = {
-  men: { label: "Men", aaLabel: "AA-m" },
-  women: { label: "Women", aaLabel: "AA-w" },
-  nonbinary: { label: "Non-binary", aaLabel: "AA-x" },
+  men: { label: "Men" },
+  women: { label: "Women" },
+  nonbinary: { label: "Non-binary" },
 };
 
 const paceSeconds = (pace) => {
@@ -181,17 +181,13 @@ const getCorral = (bestPace, category) => {
     return { label: "L", min: paceSeconds("11:37"), max: paceSeconds("25:00") };
   }
 
-  if (category === "men") {
-    if (roundedPace <= paceSeconds("5:04")) {
-      return { label: "AA-m", min: paceSeconds("4:00"), max: paceSeconds("5:04") };
-    }
-    if (roundedPace <= paceSeconds("6:19")) {
-      return { label: "A-m", min: paceSeconds("5:05"), max: paceSeconds("6:19") };
-    }
+  const aaMax = paceSeconds(category === "men" ? "5:04" : "6:19");
+  if (roundedPace <= aaMax) {
+    return { label: "AA", min: paceSeconds("4:00"), max: aaMax };
   }
 
-  if (roundedPace <= paceSeconds("6:19")) {
-    return { label: CATEGORIES[category].aaLabel, min: paceSeconds("4:00"), max: paceSeconds("6:19") };
+  if (roundedPace <= paceSeconds("6:29")) {
+    return { label: "A", min: aaMax + 1, max: paceSeconds("6:29") };
   }
 
   return CORRAL_RANGES.find((range) => roundedPace >= range.min && roundedPace <= range.max) || CORRAL_RANGES[CORRAL_RANGES.length - 1];
