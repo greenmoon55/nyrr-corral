@@ -994,6 +994,40 @@ function ManualCalculator() {
   );
 }
 
+function CorralCutoffs() {
+  const labels = ["AA", ...CORRAL_RANGES.map(({ label }) => label), "L"];
+  const rangesFor = (category) => {
+    const ranges = {};
+    for (let pace = paceSeconds("4:00"); pace <= paceSeconds("25:00"); pace += 1) {
+      const corral = getCorral(pace, category);
+      ranges[corral.label] = corral;
+    }
+    return ranges;
+  };
+  const men = rangesFor("men");
+  const women = rangesFor("women");
+  const rangeText = ({ label, min, max }) => label === "AA"
+    ? `${formatTime(max)} or faster`
+    : `${formatTime(min)} - ${formatTime(max)}`;
+
+  return (
+    <section className="cutoffs-section">
+      <h2 className="text-xl font-bold">NYRR Corral Cutoffs</h2>
+      <p className="text-sm text-gray-600">10K-equivalent pace (/mi). Effective January 25, 2026.</p>
+      <table className="cutoffs-table">
+        <thead><tr><th scope="col">Corral</th><th scope="col">Men</th><th scope="col">Women / Nonbinary</th></tr></thead>
+        <tbody>
+          {labels.map((label) => (
+            <tr key={label}><th scope="row">{label}</th><td>{rangeText(men[label])}</td><td>{rangeText(women[label])}</td></tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="text-sm text-gray-600">Regular NYRR races. NYC Half, Brooklyn Half and NYC Marathon use event-specific assignments.</p>
+      <a href="https://www.nyrr.org/run/guidelines-and-procedures/policies-rules-and-regulations/race-procedures" target="_blank" rel="noreferrer">NYRR official pace cuts</a>
+    </section>
+  );
+}
+
 export default function Calculator() {
   const [activeView, setActiveView] = useState("results");
 
@@ -1025,6 +1059,16 @@ export default function Calculator() {
         >
           Manual Check
         </button>
+        <button
+          aria-controls="corral-cutoffs-panel"
+          aria-selected={activeView === "cutoffs"}
+          className={`view-tab ${activeView === "cutoffs" ? "is-active" : ""}`}
+          onClick={() => setActiveView("cutoffs")}
+          role="tab"
+          type="button"
+        >
+          Corral Cutoffs
+        </button>
       </div>
 
       <div hidden={activeView !== "results"} id="nyrr-results-panel" role="tabpanel">
@@ -1032,6 +1076,9 @@ export default function Calculator() {
       </div>
       <div hidden={activeView !== "manual"} id="manual-check-panel" role="tabpanel">
         <ManualCalculator />
+      </div>
+      <div hidden={activeView !== "cutoffs"} id="corral-cutoffs-panel" role="tabpanel">
+        <CorralCutoffs />
       </div>
 
       <footer className="site-footer">

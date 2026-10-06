@@ -118,12 +118,20 @@ input[type="range"] {
 }
 
 .view-tab {
+  min-width: 0;
   background: transparent;
   border-radius: 0.375rem;
   color: var(--muted);
   font-weight: 600;
   padding: 0.55rem 0.9rem;
 }
+
+.cutoffs-section { display: grid; gap: 1rem; }
+.cutoffs-section a { color: var(--accent); text-decoration: underline; }
+.cutoffs-table { width: 100%; border-collapse: collapse; table-layout: fixed; font-variant-numeric: tabular-nums; }
+.cutoffs-table th, .cutoffs-table td { padding: 0.75rem 0.375rem; text-align: left; border-bottom: 1px solid #dce3e8; }
+.cutoffs-table thead { background: #f4f7f9; }
+.cutoffs-table th:first-child { width: 18%; }
 
 .view-tab.is-active {
   background: var(--accent);
@@ -701,7 +709,11 @@ input[type="range"] {
 
   .view-tab {
     flex: 1;
+    padding: 0.55rem 0.3rem;
+    font-size: 0.875rem;
   }
+
+  .cutoffs-table { font-size: 0.8125rem; }
 
   .panel {
     padding: 0.875rem;
